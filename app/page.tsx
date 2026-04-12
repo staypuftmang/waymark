@@ -355,8 +355,7 @@ export default function Page() {
                   paddingTop: 20,
                 }}
               >
-                <span style={{ color: "var(--color-accent)", marginRight: 8, fontSize: 20 }}>&#x25C8;</span>
-                Waymark
+Waymark
               </div>
 
               <div
