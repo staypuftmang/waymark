@@ -807,6 +807,7 @@ Waymark
           visualStyleKey={vk}
           layoutKey={lo}
           onEdit={() => setStep(mode === "quick" ? 10 : 2)}
+          onLogoClick={reset}
           setVisualStyleKey={setVk}
           setLayoutKey={setLo}
         />

@@ -15,6 +15,7 @@ interface JournalPreviewProps {
   visualStyleKey: VisualStyleKey;
   layoutKey: LayoutKey;
   onEdit: () => void;
+  onLogoClick: () => void;
   setVisualStyleKey: (k: VisualStyleKey) => void;
   setLayoutKey: (k: LayoutKey) => void;
 }
@@ -27,6 +28,7 @@ export default function JournalPreview({
   visualStyleKey: vk,
   layoutKey: lo,
   onEdit,
+  onLogoClick,
   setVisualStyleKey: setVk,
   setLayoutKey: setLo,
 }: JournalPreviewProps) {
@@ -86,12 +88,13 @@ export default function JournalPreview({
           &#x2190; Edit
         </button>
 
-        <span
-          className="font-title"
-          style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.5 }}
+        <button
+          onClick={onLogoClick}
+          className="font-title bg-transparent border-none cursor-pointer"
+          style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.5, color: "inherit", padding: 0 }}
         >
           Waymark
-        </span>
+        </button>
 
         <div className="flex items-center gap-3">
           {/* Download dropdown */}
