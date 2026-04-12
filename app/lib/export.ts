@@ -73,12 +73,10 @@ function findEntryBounds(element: HTMLElement): EntryBounds[] {
       const parent = entry.parentElement;
       if (!parent || parent === element) break;
 
-      const parentDisplay = getComputedStyle(parent).display;
       const parentChildren = parent.children.length;
-      if (
-        parent === element ||
-        ((parentDisplay === "grid" || parentDisplay === "flex") && parentChildren > 1)
-      ) {
+      // Stop when the parent has multiple children — each child is a separate entry.
+      // This works for all layouts: block (Classic), grid (Magazine/Grid), flex (Filmstrip/Stacked).
+      if (parent === element || parentChildren > 1) {
         break;
       }
       entry = parent;
