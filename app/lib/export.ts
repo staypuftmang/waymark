@@ -85,9 +85,11 @@ function findEntryBounds(element: HTMLElement): EntryBounds[] {
     if (entry && entry !== element && !seen.has(entry)) {
       seen.add(entry);
       const rect = entry.getBoundingClientRect();
+      // Add bottom margin so we don't clip text at the entry's edge
+      const marginBottom = parseFloat(getComputedStyle(entry).marginBottom) || 0;
       entries.push({
         top: Math.round(rect.top - elementRect.top),
-        bottom: Math.round(rect.bottom - elementRect.top),
+        bottom: Math.round(rect.bottom - elementRect.top + marginBottom + 10),
       });
     }
   });
