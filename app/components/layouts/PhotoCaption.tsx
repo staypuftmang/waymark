@@ -19,10 +19,10 @@ export default function PhotoCaption({ photo, vs, vk }: PhotoCaptionProps) {
         <div
           style={{
             fontFamily: vs.fontCaption,
-            fontSize: vk === "polaroid" ? 16 : 14,
-            lineHeight: 1.6,
-            fontStyle: vs.captionStyle === "italic" ? "italic" : "normal",
-            textTransform: vs.captionStyle === "uppercase" ? "uppercase" : "none",
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: 1.5,
+            opacity: 0.45,
           }}
         >
           {cap}
@@ -31,12 +31,11 @@ export default function PhotoCaption({ photo, vs, vk }: PhotoCaptionProps) {
       {notes && (
         <div
           style={{
-            fontFamily: vs.fontCaption,
-            fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 1.5,
-            marginTop: 4,
-            opacity: 0.5,
+            fontFamily: vs.fontBody,
+            fontSize: vk === "polaroid" ? 16 : 14,
+            lineHeight: 1.6,
+            marginTop: 6,
+            fontStyle: vs.captionStyle === "italic" ? "italic" : "normal",
           }}
         >
           {notes}

@@ -48,14 +48,15 @@ const btnSecondary: React.CSSProperties = {
 };
 
 /* ── Header ── */
-function Header({ children, right }: { children?: React.ReactNode; right?: React.ReactNode }) {
+function Header({ children, right, onLogoClick }: { children?: React.ReactNode; right?: React.ReactNode; onLogoClick?: () => void }) {
   return (
     <div
       className="sticky top-0 z-[100] flex items-center justify-between"
       style={{ background: "var(--color-ink)", padding: "16px 24px" }}
     >
-      <div
-        className="font-title"
+      <button
+        onClick={onLogoClick}
+        className="font-title bg-transparent border-none cursor-pointer"
         style={{
           fontSize: 15,
           fontWeight: 400,
@@ -63,10 +64,11 @@ function Header({ children, right }: { children?: React.ReactNode; right?: React
           letterSpacing: 2,
           textTransform: "uppercase",
           opacity: 0.9,
+          padding: 0,
         }}
       >
         Waymark
-      </div>
+      </button>
       {right || null}
       {children || null}
     </div>
@@ -338,17 +340,25 @@ export default function Page() {
       {/* ═══════════════ LANDING ═══════════════ */}
       {mode === null && (
         <div className="min-h-screen flex flex-col">
-          <div style={{ padding: "20px 28px" }}>
-            <div
-              className="font-title"
-              style={{ fontSize: 14, fontWeight: 400, letterSpacing: 2, textTransform: "uppercase", color: "var(--color-ink)" }}
-            >
-              Waymark
-            </div>
-          </div>
+          <div className="flex-1 flex items-center justify-center" style={{ padding: "0 28px 40px" }}>
+            <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
+              {/* Masthead logo */}
+              <div
+                className="font-title animate-fade-up"
+                style={{
+                  fontSize: 26,
+                  fontWeight: 500,
+                  letterSpacing: 3,
+                  textTransform: "uppercase",
+                  color: "var(--color-ink)",
+                  marginBottom: 40,
+                  paddingTop: 20,
+                }}
+              >
+                <span style={{ color: "var(--color-accent)", marginRight: 8, fontSize: 20 }}>&#x25C8;</span>
+                Waymark
+              </div>
 
-          <div className="flex-1 flex items-center" style={{ padding: "0 28px 60px" }}>
-            <div style={{ maxWidth: 520 }}>
               <div
                 className="animate-fade-up"
                 style={{
@@ -382,13 +392,14 @@ export default function Page() {
                   color: "var(--color-stone)",
                   lineHeight: 1.7,
                   marginBottom: 36,
-                  maxWidth: 380,
+                  maxWidth: 400,
+                  margin: "0 auto 36px",
                 }}
               >
                 Upload your photos, tell your story, and let AI help you craft a journal worth keeping.
               </p>
 
-              <div className="flex flex-col gap-2.5 animate-fade-up-3">
+              <div className="flex flex-col gap-2.5 animate-fade-up-3" style={{ maxWidth: 420, margin: "0 auto" }}>
                 {[
                   { m: "quick" as const, icon: "\u26A1", bg: "var(--color-accent)", t: "Quick Create", d: "Drop photos + story. AI does the rest." },
                   { m: "full" as const, icon: "\u270E", bg: "var(--color-ink)", t: "Full Builder", d: "Craft every detail yourself or with AI assistance." },
@@ -397,7 +408,7 @@ export default function Page() {
                     key={m}
                     onClick={() => { setMode(m); setStep(0); }}
                     className="flex items-center gap-3.5 border border-border bg-card cursor-pointer text-left w-full"
-                    style={{ padding: "16px 20px", borderRadius: 5, maxWidth: 380 }}
+                    style={{ padding: "16px 20px", borderRadius: 5 }}
                   >
                     <div
                       className="flex items-center justify-center shrink-0"
@@ -422,7 +433,7 @@ export default function Page() {
             </div>
           </div>
 
-          <div style={{ padding: "16px 28px", borderTop: "1px solid var(--color-border)" }}>
+          <div style={{ padding: "16px 28px", borderTop: "1px solid var(--color-border)", textAlign: "center" }}>
             <div className="text-warm uppercase" style={{ fontSize: 10, letterSpacing: 1.5 }}>
               Waymark &middot; 2026
             </div>
@@ -433,7 +444,7 @@ export default function Page() {
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
@@ -554,7 +565,7 @@ export default function Page() {
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -580,7 +591,7 @@ export default function Page() {
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header>
+        <Header onLogoClick={reset}>
           <div className="flex gap-0.5">
             {[0, 1, 2].map((s) => (
               <div
