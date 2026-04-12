@@ -13,7 +13,7 @@ interface LayoutProps {
 export default function Filmstrip({ photos, vs, vk }: LayoutProps) {
   const br = getBorderRadius(vk);
   return (
-    <div style={{ overflowX: "auto", display: "flex", gap: 14, paddingBottom: 16 }}>
+    <div data-layout="filmstrip" style={{ overflowX: "auto", display: "flex", gap: 14, paddingBottom: 16 }}>
       {photos.map((p) => (
         <div key={p.id} style={{ minWidth: "75%", maxWidth: "75%", flexShrink: 0 }}>
           <img

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
+import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
 import PhotoStyleRow from "@/app/components/PhotoStyleRow";
@@ -97,9 +98,73 @@ export default function Page() {
   const [ws, setWs] = useState<WordStyleKey>("poetic");
   const [lo, setLo] = useState<LayoutKey>("classic");
   const [quickGenerating, setQuickGenerating] = useState(false);
+  const [savedJournal, setSavedJournal] = useState<SavedState | null>(null);
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [appReady, setAppReady] = useState(false);
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Load saved state on mount ──
+  useEffect(() => {
+    loadState().then((saved) => {
+      if (saved && saved.tripTitle) {
+        setSavedJournal(saved);
+        setShowResumePrompt(true);
+      }
+      setAppReady(true);
+    });
+  }, []);
+
+  // ── Auto-save with 2s debounce ──
+  useEffect(() => {
+    if (!appReady || mode === null) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const state: SavedState = {
+        mode: mode as "quick" | "full",
+        step,
+        tripTitle,
+        tripBrief,
+        startDate: startDate ? startDate.toISOString() : null,
+        endDate: endDate ? endDate.toISOString() : null,
+        visualStyleKey: vk,
+        wordStyle: ws,
+        layoutKey: lo,
+        photos,
+      };
+      saveState(state);
+    }, 2000);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, lo, photos]);
+
+  const resumeJournal = () => {
+    if (!savedJournal) return;
+    setMode(savedJournal.mode);
+    setStep(savedJournal.step);
+    setTripTitle(savedJournal.tripTitle);
+    setTripBrief(savedJournal.tripBrief);
+    setStartDate(savedJournal.startDate ? new Date(savedJournal.startDate) : null);
+    setEndDate(savedJournal.endDate ? new Date(savedJournal.endDate) : null);
+    setVk(savedJournal.visualStyleKey as VisualStyleKey);
+    setWs(savedJournal.wordStyle as WordStyleKey);
+    setLo(savedJournal.layoutKey as LayoutKey);
+    setPhotos(savedJournal.photos);
+    setShowResumePrompt(false);
+    setSavedJournal(null);
+  };
+
+  const startFresh = () => {
+    setConfirmAction(() => () => {
+      clearState();
+      setSavedJournal(null);
+      setShowResumePrompt(false);
+    });
+  };
 
   const addPhotos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     Array.from(e.target.files || []).forEach((f) => {
@@ -137,7 +202,8 @@ export default function Page() {
       return c;
     });
 
-  const reset = () => {
+  const doReset = () => {
+    clearState();
     setMode(null);
     setStep(0);
     setPhotos([]);
@@ -145,6 +211,15 @@ export default function Page() {
     setTripBrief("");
     setStartDate(null);
     setEndDate(null);
+  };
+
+  const reset = () => {
+    // If user has started working, confirm before discarding
+    if (tripTitle || photos.length > 0) {
+      setConfirmAction(() => doReset);
+    } else {
+      doReset();
+    }
   };
 
   const dateDisplay = startDate
@@ -217,8 +292,49 @@ export default function Page() {
     color: "var(--color-ink)",
   });
 
+  if (!appReady) {
+    return <div className="min-h-screen bg-paper" />;
+  }
+
   return (
     <div className="min-h-screen bg-paper font-body">
+
+      {/* ═══════════════ RESUME PROMPT ═══════════════ */}
+      {showResumePrompt && savedJournal && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 5, padding: "32px 28px", maxWidth: 400, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 24, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              Welcome back
+            </div>
+            <p className="text-stone" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+              You have an unfinished journal: <strong className="text-ink">{savedJournal.tripTitle}</strong>
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={startFresh} style={{ ...btnSecondary, fontSize: 13 }}>Start Fresh</button>
+              <button onClick={resumeJournal} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Resume</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════ CONFIRM DIALOG ═══════════════ */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              Discard journal?
+            </div>
+            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              This will discard your current journal. Are you sure?
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setConfirmAction(null)} style={{ ...btnSecondary, fontSize: 13 }}>Cancel</button>
+              <button onClick={() => { confirmAction(); setConfirmAction(null); }} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Discard</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════════════ LANDING ═══════════════ */}
       {mode === null && (
         <div className="min-h-screen flex flex-col">
