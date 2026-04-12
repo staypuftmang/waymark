@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Photo, VisualStyleKey, LayoutKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { exportPDF, exportImage } from "@/app/lib/export";
@@ -34,6 +34,19 @@ export default function JournalPreview({
   const LayoutComponent = LayoutMap[lo];
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!downloadOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDownloadOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [downloadOpen]);
 
   const handleExportPDF = async () => {
     setExporting("pdf");
@@ -82,7 +95,7 @@ export default function JournalPreview({
 
         <div className="flex items-center gap-3">
           {/* Download dropdown */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setDownloadOpen(!downloadOpen)}
               disabled={!!exporting}
@@ -121,7 +134,7 @@ export default function JournalPreview({
                   onMouseEnter={(e) => { e.currentTarget.style.background = `${vs.fg}08`; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
-                  Download PDF
+                  Save as PDF
                 </button>
                 <button
                   onClick={handleExportImage}
@@ -135,7 +148,7 @@ export default function JournalPreview({
                   onMouseEnter={(e) => { e.currentTarget.style.background = `${vs.fg}08`; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
-                  Download Image
+                  Save Image
                 </button>
               </div>
             )}
@@ -149,6 +162,7 @@ export default function JournalPreview({
 
       {/* Cover section */}
       <div
+        data-export-cover
         className="flex flex-col items-center justify-center text-center"
         style={{ minHeight: "40vh", padding: "48px 24px" }}
       >
@@ -228,11 +242,11 @@ export default function JournalPreview({
             textAlign: "center",
             marginTop: 40,
             fontFamily: vs.fontCaption,
-            fontSize: 8,
+            fontSize: 11,
             opacity: 0.3,
           }}
         >
-          Made with Waymark
+          Made with Waymark &middot; mywaymarks.com
         </div>
       </div>
 
@@ -248,13 +262,7 @@ export default function JournalPreview({
         />
       </div>
 
-      {/* Close dropdown when clicking outside */}
-      {downloadOpen && (
-        <div
-          className="fixed inset-0 z-[150]"
-          onClick={() => setDownloadOpen(false)}
-        />
-      )}
+{/* click-outside overlay removed — dropdown closes via onBlur */}
     </div>
   );
 }
