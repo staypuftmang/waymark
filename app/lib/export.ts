@@ -107,7 +107,7 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
   const entryBounds = findEntryBounds(element);
 
   const canvas = await html2canvas(element, {
-    scale: 2,
+    scale: 3,
     useCORS: true,
     backgroundColor: bgColor,
     height: element.scrollHeight,
@@ -124,10 +124,11 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
   const contentWidth = pdfWidth - margin * 2;
   const contentHeight = pdfHeight - margin * 2;
 
-  // Canvas is at 2x scale, so DOM positions * 2 = canvas positions
+  // Canvas is at 3x scale, so DOM positions * 3 = canvas positions
+  const captureScale = 3;
   const canvasEntries = entryBounds.map((e) => ({
-    top: e.top * 2,
-    bottom: e.bottom * 2,
+    top: e.top * captureScale,
+    bottom: e.bottom * captureScale,
   }));
 
   // How many canvas pixels fit in one PDF page
@@ -208,7 +209,7 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
     }
 
     const destH = sliceH * pdfScale;
-    const sliceDataUrl = sliceCanvas.toDataURL("image/jpeg", 0.85);
+    const sliceDataUrl = sliceCanvas.toDataURL("image/jpeg", 0.95);
     pdf.addImage(sliceDataUrl, "JPEG", margin, margin, contentWidth, destH);
 
     // Footer on last page — 40-60px gap below content (50pt in PDF space)
@@ -231,7 +232,7 @@ export async function exportImage(elementId: string, title: string, bgColor: str
   const restore = prepareForCapture(element);
 
   const canvas = await html2canvas(element, {
-    scale: 2,
+    scale: 3,
     useCORS: true,
     backgroundColor: bgColor,
     height: element.scrollHeight,
@@ -252,6 +253,6 @@ export async function exportImage(elementId: string, title: string, bgColor: str
       URL.revokeObjectURL(url);
     },
     "image/jpeg",
-    0.85
+    0.95
   );
 }
