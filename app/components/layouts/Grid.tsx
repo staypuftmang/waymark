@@ -20,8 +20,7 @@ export default function Grid({ photos, vs, vk }: LayoutProps) {
             src={p.src}
             style={{
               width: "100%",
-              aspectRatio: "4/3",
-              objectFit: "cover",
+              objectFit: "contain",
               borderRadius: br,
               display: "block",
             }}
