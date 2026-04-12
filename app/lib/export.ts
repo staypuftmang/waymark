@@ -164,14 +164,22 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       pages.push({ start: cursor, end: breakAt });
       cursor = breakAt;
     } else {
-      // No entry fits entirely — find the first entry that STARTS after cursor
-      // and break before it (push it to the next page).
-      const nextEntry = canvasEntries.find((e) => e.top > cursor);
-      if (nextEntry && nextEntry.top > cursor) {
-        pages.push({ start: cursor, end: nextEntry.top });
-        cursor = nextEntry.top;
+      // No entry fully fits on this page (e.g. cover + first big entry
+      // together exceed one page). Fill the page to capacity rather than
+      // leaving it mostly empty. Find the best entry TOP near the page
+      // limit to avoid cutting through a photo — but if the page would
+      // be less than half full, just use the full page limit.
+      const nearestTop = canvasEntries
+        .map((e) => e.top)
+        .filter((t) => t > cursor && t <= pageLimit && t >= pageLimit * 0.5)
+        .sort((a, b) => b - a)[0];
+
+      if (nearestTop) {
+        // Break just before this entry's photo
+        pages.push({ start: cursor, end: nearestTop });
+        cursor = nearestTop;
       } else {
-        // Absolute fallback — single entry taller than a full page
+        // No good break — fill the page completely
         pages.push({ start: cursor, end: pageLimit });
         cursor = pageLimit;
       }
