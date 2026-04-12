@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #1A1815;
+  --color-paper: #F7F5F0;
+  --color-stone: #78716C;
+  --color-warm: #A8A29E;
+  --color-accent: #9A3412;
+  --color-border: #E7E5E0;
+  --color-card: #FFFFFF;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-paper: var(--color-paper);
+  --color-stone: var(--color-stone);
+  --color-warm: var(--color-warm);
+  --color-accent: var(--color-accent);
+  --color-border: var(--color-border);
+  --color-card: var(--color-card);
+  --font-title: var(--font-fraunces);
+  --font-body: var(--font-manrope);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wmP {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.6s ease-out both;
+}
+
+.animate-fade-up-1 {
+  animation: fadeUp 0.6s ease-out 0.1s both;
+}
+
+.animate-fade-up-2 {
+  animation: fadeUp 0.6s ease-out 0.2s both;
+}
+
+.animate-fade-up-3 {
+  animation: fadeUp 0.6s ease-out 0.3s both;
+}
