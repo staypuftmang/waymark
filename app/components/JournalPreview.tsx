@@ -171,8 +171,8 @@ export default function JournalPreview({
       {/* Cover section */}
       <div
         data-export-cover
-        className="flex flex-col items-center justify-center text-center"
-        style={{ minHeight: "40vh", padding: "48px 24px" }}
+        className="flex flex-col items-center text-center"
+        style={{ padding: "60px 24px 40px" }}
       >
         {dateDisplay && (
           <div
@@ -202,6 +202,21 @@ export default function JournalPreview({
         <div
           style={{ width: 28, height: 1.5, background: vs.accent, margin: "22px auto 0" }}
         />
+        {tripBrief && (
+          <p
+            style={{
+              fontFamily: vs.fontBody,
+              fontSize: 16,
+              lineHeight: 1.8,
+              maxWidth: 540,
+              marginTop: 22,
+              opacity: 0.8,
+              fontStyle: vk === "editorial" ? "italic" : "normal",
+            }}
+          >
+            {tripBrief}
+          </p>
+        )}
       </div>
 
       {/* Body */}
@@ -212,22 +227,6 @@ export default function JournalPreview({
           padding: "36px 24px 80px",
         }}
       >
-        {tripBrief && (
-          <p
-            style={{
-              fontFamily: vs.fontBody,
-              fontSize: 16,
-              lineHeight: 1.8,
-              maxWidth: 540,
-              margin: "0 auto 44px",
-              textAlign: "center",
-              opacity: 0.8,
-              fontStyle: vk === "editorial" ? "italic" : "normal",
-            }}
-          >
-            {tripBrief}
-          </p>
-        )}
 
         <LayoutComponent photos={photos} vs={vs} vk={vk} />
 
