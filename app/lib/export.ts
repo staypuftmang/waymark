@@ -149,31 +149,31 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
     }
 
     // Find the last entry whose BOTTOM fits within this page.
-    // That entry's bottom becomes our break point (include it on this page).
+    // The entry just needs to end before the page limit — it doesn't matter
+    // where it starts, since earlier content (cover, brief, previous entries)
+    // is already on this page.
     let breakAt = -1;
     for (let i = canvasEntries.length - 1; i >= 0; i--) {
       const entry = canvasEntries[i];
-      // Entry must start after cursor (on this page) and fully fit
-      if (entry.top >= cursor && entry.bottom <= pageLimit) {
+      if (entry.bottom > cursor && entry.bottom <= pageLimit) {
         breakAt = entry.bottom;
         break;
       }
     }
 
     if (breakAt > cursor) {
-      // Add a small gap after the last entry (16 canvas px = 8 DOM px)
-      pages.push({ start: cursor, end: breakAt + 16 });
-      cursor = breakAt + 16;
+      // Break after the last entry that fully fits
+      pages.push({ start: cursor, end: breakAt });
+      cursor = breakAt;
     } else {
-      // No entry boundary fits — either pre-content (cover/brief) fills the page,
-      // or a single entry is taller than a full page.
-      // Try breaking at the top of the first entry that starts on this page.
-      const nextEntry = canvasEntries.find((e) => e.top > cursor && e.top < pageLimit);
-      if (nextEntry) {
+      // No entry fits entirely — find the first entry that STARTS after cursor
+      // and break before it (push it to the next page).
+      const nextEntry = canvasEntries.find((e) => e.top > cursor);
+      if (nextEntry && nextEntry.top > cursor) {
         pages.push({ start: cursor, end: nextEntry.top });
         cursor = nextEntry.top;
       } else {
-        // Absolute fallback
+        // Absolute fallback — single entry taller than a full page
         pages.push({ start: cursor, end: pageLimit });
         cursor = pageLimit;
       }
