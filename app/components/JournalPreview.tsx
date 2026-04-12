@@ -99,8 +99,16 @@ export default function JournalPreview({
             <button
               onClick={() => setDownloadOpen(!downloadOpen)}
               disabled={!!exporting}
-              className="bg-transparent border-none cursor-pointer"
-              style={{ color: "inherit", fontSize: 11, opacity: exporting ? 0.4 : 0.7 }}
+              className="border-none cursor-pointer font-body"
+              style={{
+                color: vs.bg,
+                fontSize: 11,
+                fontWeight: 600,
+                opacity: exporting ? 0.5 : 1,
+                background: `${vs.bg}20`,
+                padding: "4px 10px",
+                borderRadius: 3,
+              }}
             >
               {exporting
                 ? exporting === "pdf" ? "Generating PDF\u2026" : "Generating image\u2026"
