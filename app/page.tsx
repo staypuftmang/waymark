@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
-import { aiCall } from "@/app/lib/ai";
+import { aiCall, setFallbackListener } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -103,14 +103,19 @@ export default function Page() {
   const [savedJournal, setSavedJournal] = useState<SavedState | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [appReady, setAppReady] = useState(false);
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Load saved state on mount ──
+  // ── Load saved state on mount + register fallback listener ──
   useEffect(() => {
+    setFallbackListener(() => {
+      setToast("AI model busy — using faster fallback model");
+      setTimeout(() => setToast(null), 5000);
+    });
     loadState().then((saved) => {
       if (saved && saved.tripTitle) {
         setSavedJournal(saved);
@@ -300,6 +305,24 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-paper font-body">
+
+      {/* ═══════════════ TOAST ═══════════════ */}
+      {toast && (
+        <div
+          className="fixed top-4 left-1/2 z-[500] font-body"
+          style={{
+            transform: "translateX(-50%)",
+            background: "var(--color-ink)",
+            color: "var(--color-paper)",
+            padding: "10px 20px",
+            borderRadius: 5,
+            fontSize: 13,
+            boxShadow: "0 4px 20px rgba(0,0,0,.2)",
+          }}
+        >
+          {toast}
+        </div>
+      )}
 
       {/* ═══════════════ RESUME PROMPT ═══════════════ */}
       {showResumePrompt && savedJournal && (
