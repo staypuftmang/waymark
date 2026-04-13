@@ -206,7 +206,7 @@ export default function JournalPreview({
           style={{ width: 28, height: 1.5, background: vs.accent, margin: "22px auto 0" }}
         />
         {tripBrief && (
-          <p
+          <div
             style={{
               fontFamily: vs.fontBody,
               fontSize: 16,
@@ -215,10 +215,11 @@ export default function JournalPreview({
               marginTop: 22,
               opacity: 0.8,
               fontStyle: vk === "editorial" ? "italic" : "normal",
+              whiteSpace: "pre-line",
             }}
           >
             {tripBrief}
-          </p>
+          </div>
         )}
       </div>
 

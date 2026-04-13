@@ -102,6 +102,7 @@ export default function Page() {
   const [ws, setWs] = useState<WordStyleKey>("poetic");
   const [lo, setLo] = useState<LayoutKey>("classic");
   const [quickGenerating, setQuickGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
   const [savedJournal, setSavedJournal] = useState<SavedState | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
@@ -289,9 +290,11 @@ export default function Page() {
 
   const quickGenerate = async () => {
     setQuickGenerating(true);
+    setGenProgress({ current: 0, total: photos.length });
     const previousCaptions: string[] = [];
 
     for (let i = 0; i < photos.length; i++) {
+      setGenProgress({ current: i + 1, total: photos.length });
       const p = photos[i];
       const prompt = quickCreatePrompt(ws, tripTitle, tripBrief, dateDisplay, i, photos.length, previousCaptions);
 
@@ -308,6 +311,7 @@ export default function Page() {
       }
     }
     setQuickGenerating(false);
+    setGenProgress(null);
     setStep(10);
   };
 
@@ -410,6 +414,31 @@ export default function Page() {
           <div style={{ marginBottom: 6 }}>Processing photos... {uploadProgress.current} of {uploadProgress.total}</div>
           <div style={{ width: "100%", height: 3, background: "rgba(255,255,255,.2)", borderRadius: 2 }}>
             <div style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%`, height: "100%", background: "var(--color-accent)", borderRadius: 2, transition: "width .3s" }} />
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════ GENERATION OVERLAY ═══════════════ */}
+      {quickGenerating && genProgress && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center" style={{ background: "rgba(26,24,21,.7)" }}>
+          <div className="bg-card text-center" style={{ borderRadius: 5, padding: "40px 36px", maxWidth: 360, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.25)" }}>
+            <div className="font-title" style={{ fontSize: 22, fontWeight: 300, color: "var(--color-ink)", marginBottom: 12 }}>
+              Writing your journal
+            </div>
+            <div className="text-stone" style={{ fontSize: 13, marginBottom: 20 }}>
+              Crafting photo {genProgress.current} of {genProgress.total}
+            </div>
+            <div className="flex justify-center gap-2" style={{ marginBottom: 20 }}>
+              <span className="generating-dot" />
+              <span className="generating-dot" />
+              <span className="generating-dot" />
+            </div>
+            <div style={{ width: "100%", height: 3, background: "var(--color-border)", borderRadius: 2 }}>
+              <div style={{ width: `${(genProgress.current / genProgress.total) * 100}%`, height: "100%", background: "var(--color-accent)", borderRadius: 2, transition: "width .5s ease" }} />
+            </div>
+            <div className="text-warm" style={{ fontSize: 11, marginTop: 12 }}>
+              This may take a moment per photo
+            </div>
           </div>
         </div>
       )}

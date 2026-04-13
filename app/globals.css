@@ -59,3 +59,24 @@ body {
 .animate-fade-up-3 {
   animation: fadeUp 0.6s ease-out 0.3s both;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+.generating-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.generating-dot:nth-child(2) { animation-delay: 0.2s; }
+.generating-dot:nth-child(3) { animation-delay: 0.4s; }
