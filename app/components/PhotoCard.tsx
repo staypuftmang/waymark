@@ -40,7 +40,7 @@ export default function PhotoCard({
   const ctx = `Trip: "${title}"${brief ? `\nBrief: "${brief}"` : ""}${dd ? `\nDates: ${dd}` : ""}`;
 
   const rewrite = async (field: string, aiField: string, setLoading: (v: boolean) => void) => {
-    const raw = p[field as keyof Photo] as string;
+    const raw = (p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string);
     if (!raw) return;
     setLoading(true);
     const t = await aiCall(
@@ -53,9 +53,10 @@ export default function PhotoCard({
   const generateParagraph = async () => {
     setLP(true);
     const parts = [ctx];
-    if (p.caption) parts.push(`Caption: "${p.caption}"`);
-    if (p.notes) parts.push(`Notes: "${p.notes}"`);
-    if (p.aiCaption) parts.push(`Refined: "${p.aiCaption}"`);
+    const capText = p.aiCaption || p.caption;
+    const notesText = p.aiNotes || p.notes;
+    if (capText) parts.push(`Caption: "${capText}"`);
+    if (notesText) parts.push(`Notes: "${notesText}"`);
     const t = await aiCall(
       `${WS[ws].sys}\n\nWrite a short paragraph (3-5 sentences) for a travel journal entry. Use ONLY the details below. Do not reference images.\n\n${parts.join("\n")}\n\nReturn ONLY the paragraph.`
     );

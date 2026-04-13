@@ -30,10 +30,12 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
     const ctx = `Trip: "${title}"${brief ? `\nBrief: "${brief}"` : ""}${dd ? `\nDates: ${dd}` : ""}`;
 
     for (const p of photos) {
-      if (!p.caption && !p.notes) continue;
+      const capText = p.aiCaption || p.caption;
+      const notesText = p.aiNotes || p.notes;
+      if (!capText && !notesText) continue;
       const parts = [ctx];
-      if (p.caption) parts.push(`Caption: "${p.caption}"`);
-      if (p.notes) parts.push(`Notes: "${p.notes}"`);
+      if (capText) parts.push(`Caption: "${capText}"`);
+      if (notesText) parts.push(`Notes: "${notesText}"`);
 
       const prompt = `${WS[ws].sys}\n\nGenerate caption, notes, paragraph for a travel journal entry from the text below. No image references.\n\nReturn ONLY valid JSON: {caption, notes, paragraph}\n- caption: 1 sentence\n- notes: 1-2 sentences\n- paragraph: 3-5 sentences\n\n${parts.join("\n")}\n\nJSON only, no markdown.`;
 
@@ -86,7 +88,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
     });
   };
 
-  const has = photos.some((p) => p.caption || p.notes);
+  const has = photos.some((p) => p.caption || p.notes || p.aiCaption || p.aiNotes);
 
   const btnAccent: React.CSSProperties = {
     display: "inline-flex",
