@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+// Allow up to 60 seconds for AI generation (Hobby plan max)
+export const maxDuration = 60;
+
 const client = new Anthropic();
 
 export async function POST(req: Request) {
