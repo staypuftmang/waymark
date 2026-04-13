@@ -41,27 +41,49 @@ export function quickCreatePrompt(
   total: number,
   previousCaptions: string[]
 ): string {
-  const prevCtx = previousCaptions.length > 0
-    ? `\n- Previous photo captions (avoid repeating similar themes): ${previousCaptions.join(", ")}`
-    : "";
+  const aspects = [
+    "a taste or smell — food, coffee, sea air, pine, dust",
+    "a sound — music, conversation, wind, silence, an animal",
+    "a person — a companion, a stranger, a local you met",
+    "the light — golden hour, harsh noon, dawn, neon, candlelight",
+    "a texture — stone, sand, fabric, water, cold metal",
+    "an emotion — nerves, wonder, exhaustion, joy, homesickness",
+    "movement — walking, driving, climbing, floating, running",
+    "weather — rain, heat, fog, crisp cold, a sudden storm",
+  ];
+  const aspect = aspects[index % aspects.length];
 
-  let arc = "the heart — deeper experiences, unexpected moments, connections";
-  if (index < 3) arc = "the beginning — anticipation, arrival, first impressions";
-  else if (index >= total - 2) arc = "the close — reflection, departure, what you're taking with you";
+  let arc = "the heart of the trip — a deeper experience, an unexpected moment, a connection";
+  if (index === 0) arc = "the very beginning — the first moment, arrival, stepping into the unknown";
+  else if (index === 1) arc = "early days — settling in, first impressions, getting your bearings";
+  else if (index === total - 1) arc = "the final moment — departure, last looks, what you carry home";
+  else if (index === total - 2) arc = "nearing the end — bittersweet, savoring the last days";
+
+  const prevBlock = previousCaptions.length > 0
+    ? `\nPREVIOUS CAPTIONS ALREADY WRITTEN (you MUST write something completely different — different subject, different imagery, different sentence structure):
+${previousCaptions.map((c, i) => `  Photo ${i + 1}: "${c}"`).join("\n")}
+`
+    : "";
 
   return `${systemPrompt(ws)}
 
 Write content for photo ${index + 1} of ${total} in a personal travel journal.
 
-CONTEXT (do not copy or repeat any of this — use it only as background):
-${tripContext(title, brief, dates)}${prevCtx}
+CONTEXT (do not copy or repeat — background only):
+${tripContext(title, brief, dates)}
+${prevBlock}
+This is photo ${index + 1} of ${total}. Narrative moment: ${arc}.
 
-This is photo ${index + 1} of ${total}. Place it in the narrative arc: ${arc}.
+FOCUS THIS ENTRY ON: ${aspect}. Build the entry around this sensory dimension.
 
-Write ORIGINAL content. Every sentence must be new — do not borrow from the trip story above.
+UNIQUENESS RULES:
+- Your caption MUST start with a different word than any previous caption.
+- Your paragraph MUST focus on a different subject/scene than previous entries.
+- Do NOT mention roads, stretching, or horizons if a previous caption already did.
+- Each entry should feel like a distinct moment, not a variation of the same scene.
 
 Return ONLY valid JSON:
-{"caption": "1 short sentence — a specific label for this moment, not a generic description", "notes": "1-2 sentences — what made this particular moment memorable, with sensory detail", "paragraph": "3-5 sentences — bring this specific moment to life. Concrete details: colors, sounds, textures, emotions. No clichés."}
+{"caption": "1 short sentence — a specific label for THIS moment, starting with a unique word", "notes": "1-2 sentences — what made THIS particular moment memorable, with ${aspect}", "paragraph": "3-5 sentences — bring THIS specific moment to life with concrete ${aspect} details. No clichés."}
 
 JSON only, no markdown, no commentary.`;
 }
