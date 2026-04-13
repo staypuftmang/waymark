@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { Photo, WordStyleKey } from "@/app/lib/types";
-import { WS } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
+import { rewriteCaptionPrompt, rewriteNotesPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
 import AiButton from "./AiButton";
 import AiSuggestion from "./AiSuggestion";
+import HelperText from "./HelperText";
 
 interface PhotoCardProps {
   photo: Photo;
@@ -37,29 +38,23 @@ export default function PhotoCard({
   const [loadingParagraph, setLP] = useState(false);
   const [showParagraph, setSP] = useState(!!p.paragraph || !!p.aiParagraph);
 
-  const ctx = `Trip: "${title}"${brief ? `\nBrief: "${brief}"` : ""}${dd ? `\nDates: ${dd}` : ""}`;
-
   const rewrite = async (field: string, aiField: string, setLoading: (v: boolean) => void) => {
     const raw = (p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string);
     if (!raw) return;
     setLoading(true);
-    const t = await aiCall(
-      `${WS[ws].sys}\n\n${ctx}\n\nOriginal ${field}: "${raw}"\n\nReturn ONLY the rewritten text, 1-2 sentences.`
-    );
+    const prompt = field === "caption"
+      ? rewriteCaptionPrompt(ws, title, brief, raw)
+      : rewriteNotesPrompt(ws, title, brief, raw);
+    const t = await aiCall(prompt);
     if (t) up(p.id, aiField, t);
     setLoading(false);
   };
 
   const generateParagraph = async () => {
     setLP(true);
-    const parts = [ctx];
     const capText = p.aiCaption || p.caption;
     const notesText = p.aiNotes || p.notes;
-    if (capText) parts.push(`Caption: "${capText}"`);
-    if (notesText) parts.push(`Notes: "${notesText}"`);
-    const t = await aiCall(
-      `${WS[ws].sys}\n\nWrite a short paragraph (3-5 sentences) for a travel journal entry. Use ONLY the details below. Do not reference images.\n\n${parts.join("\n")}\n\nReturn ONLY the paragraph.`
-    );
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText));
     if (t) {
       up(p.id, "aiParagraph", t);
       setSP(true);
@@ -130,7 +125,7 @@ export default function PhotoCard({
         <div className="flex-1 flex flex-col gap-1">
           <div className="flex gap-1 items-center">
             <input
-              placeholder="Caption..."
+              placeholder="A short label for this photo..."
               value={p.caption}
               onChange={(e) => up(p.id, "caption", e.target.value)}
               style={{ ...inputStyle, fontSize: 13 }}
@@ -139,6 +134,7 @@ export default function PhotoCard({
               <AiButton onClick={() => rewrite("caption", "aiCaption", setLC)} loading={loadingCaption} small />
             )}
           </div>
+          {idx === 0 && <HelperText>Captions appear as small labels under your photos in the journal.</HelperText>}
           <AiSuggestion
             text={p.aiCaption}
             onClear={() => up(p.id, "aiCaption", "")}
@@ -150,7 +146,7 @@ export default function PhotoCard({
 
           <div className="flex gap-1 items-start">
             <textarea
-              placeholder="Notes..."
+              placeholder="What's the story behind this moment?"
               value={p.notes}
               onChange={(e) => up(p.id, "notes", e.target.value)}
               style={textareaStyle}
@@ -159,6 +155,7 @@ export default function PhotoCard({
               <AiButton onClick={() => rewrite("notes", "aiNotes", setLN)} loading={loadingNotes} small />
             )}
           </div>
+          {idx === 0 && <HelperText>Notes become the main readable text under each photo. The more you write, the better the AI can help.</HelperText>}
           <AiSuggestion
             text={p.aiNotes}
             onClear={() => up(p.id, "aiNotes", "")}

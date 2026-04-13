@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { Photo, WordStyleKey } from "@/app/lib/types";
-import { WS, cleanJson } from "@/app/lib/constants";
+import { cleanJson } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
+import { batchRewritePrompt } from "@/app/lib/prompts";
 
 interface RewriteAllProps {
   photos: Photo[];
@@ -27,22 +28,21 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
   const run = async () => {
     setLoading(true);
     const res: Record<number, StagedResult> = {};
-    const ctx = `Trip: "${title}"${brief ? `\nBrief: "${brief}"` : ""}${dd ? `\nDates: ${dd}` : ""}`;
+    const previousOutputs: string[] = [];
 
     for (const p of photos) {
       const capText = p.aiCaption || p.caption;
       const notesText = p.aiNotes || p.notes;
       if (!capText && !notesText) continue;
-      const parts = [ctx];
-      if (capText) parts.push(`Caption: "${capText}"`);
-      if (notesText) parts.push(`Notes: "${notesText}"`);
 
-      const prompt = `${WS[ws].sys}\n\nGenerate caption, notes, paragraph for a travel journal entry from the text below. No image references.\n\nReturn ONLY valid JSON: {caption, notes, paragraph}\n- caption: 1 sentence\n- notes: 1-2 sentences\n- paragraph: 3-5 sentences\n\n${parts.join("\n")}\n\nJSON only, no markdown.`;
+      const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
 
       const raw = await aiCall(prompt);
       if (raw) {
         try {
-          res[p.id] = JSON.parse(cleanJson(raw));
+          const parsed = JSON.parse(cleanJson(raw));
+          res[p.id] = parsed;
+          if (parsed.caption) previousOutputs.push(parsed.caption);
         } catch (e) {
           console.error(e);
         }

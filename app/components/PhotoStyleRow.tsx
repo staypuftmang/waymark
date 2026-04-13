@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Photo, WordStyleKey } from "@/app/lib/types";
-import { WS } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
+import { rewriteCaptionPrompt, rewriteNotesPrompt, rewriteParagraphPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
 import AiButton from "./AiButton";
 
 interface PhotoStyleRowProps {
@@ -28,7 +28,6 @@ export default function PhotoStyleRow({
   const [loadingParagraph, setLP] = useState(false);
   const [pending, setPending] = useState<Record<string, string>>({});
 
-  const ctx = `Trip: "${title}"${brief ? `\nBrief: "${brief}"` : ""}${dd ? `\nDates: ${dd}` : ""}`;
   const cap = p.aiCaption || p.caption;
   const notes = p.aiNotes || p.notes;
   const para = p.aiParagraph || p.paragraph;
@@ -41,22 +40,21 @@ export default function PhotoStyleRow({
     const raw = (p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string);
     if (!raw) return;
     setLoading(true);
-    const t = await aiCall(
-      `${WS[ws].sys}\n\n${ctx}\n\nRewrite: "${raw}"\n\nReturn ONLY rewritten text, 1-2 sentences.`
-    );
+    const prompt = field === "caption"
+      ? rewriteCaptionPrompt(ws, title, brief, raw)
+      : field === "notes"
+        ? rewriteNotesPrompt(ws, title, brief, raw)
+        : rewriteParagraphPrompt(ws, title, brief, raw);
+    const t = await aiCall(prompt);
     if (t) setPending((v) => ({ ...v, [field]: t }));
     setLoading(false);
   };
 
   const generateParagraph = async () => {
     setLP(true);
-    const parts = [ctx];
-    if (p.aiCaption || p.caption) parts.push(`Caption: "${p.aiCaption || p.caption}"`);
-    if (p.aiNotes || p.notes) parts.push(`Notes: "${p.aiNotes || p.notes}"`);
-    if (p.aiCaption) parts.push(`Refined: "${p.aiCaption}"`);
-    const t = await aiCall(
-      `${WS[ws].sys}\n\nWrite 3-5 sentence travel journal paragraph from details below. No image references.\n\n${parts.join("\n")}\n\nReturn ONLY the paragraph.`
-    );
+    const capText = p.aiCaption || p.caption;
+    const notesText = p.aiNotes || p.notes;
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText));
     if (t) setPending((v) => ({ ...v, paragraph: t }));
     setLP(false);
   };

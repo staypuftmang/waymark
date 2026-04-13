@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
+import { quickCreatePrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import DatePicker from "@/app/components/DatePicker";
@@ -11,6 +12,7 @@ import PhotoStyleRow from "@/app/components/PhotoStyleRow";
 import StylePreview from "@/app/components/StylePreview";
 import RewriteAll from "@/app/components/RewriteAll";
 import JournalPreview from "@/app/components/JournalPreview";
+import HelperText from "@/app/components/HelperText";
 
 /* ── Shared inline styles ── */
 const iStyle: React.CSSProperties = {
@@ -105,6 +107,9 @@ export default function Page() {
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [appReady, setAppReady] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const [showPhotoLimitWarning, setShowPhotoLimitWarning] = useState<{ files: File[]; count: number } | null>(null);
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
@@ -173,15 +178,32 @@ export default function Page() {
     });
   };
 
-  const addPhotos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files || []).forEach((f) => {
-      const reader = new FileReader();
-      reader.onload = (ev) =>
+  const validImageTypes = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"];
+
+  const processFiles = useCallback(async (files: File[]) => {
+    const validFiles = files.filter((f) => validImageTypes.includes(f.type));
+    const invalidCount = files.length - validFiles.length;
+    if (invalidCount > 0) {
+      setUploadErrors((prev) => [...prev, `${invalidCount} file${invalidCount > 1 ? "s" : ""} skipped (not images)`]);
+    }
+
+    setUploadProgress({ active: true, current: 0, total: validFiles.length });
+    const errors: string[] = [];
+
+    for (let i = 0; i < validFiles.length; i++) {
+      setUploadProgress({ active: true, current: i + 1, total: validFiles.length });
+      try {
+        const src = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target?.result as string);
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsDataURL(validFiles[i]);
+        });
         setPhotos((p) => [
           ...p,
           {
             id: Date.now() + Math.random(),
-            src: ev.target?.result as string,
+            src,
             caption: "",
             notes: "",
             paragraph: "",
@@ -190,10 +212,38 @@ export default function Page() {
             aiParagraph: "",
           },
         ]);
-      reader.readAsDataURL(f);
-    });
-    e.target.value = "";
+      } catch {
+        errors.push(validFiles[i].name);
+      }
+    }
+
+    setUploadProgress({ active: false, current: 0, total: 0 });
+    if (errors.length > 0) {
+      setUploadErrors((prev) => [...prev, `${errors.length} photo${errors.length > 1 ? "s" : ""} couldn't be processed`]);
+    }
   }, []);
+
+  const addPhotos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length === 0) return;
+
+    setUploadErrors([]);
+
+    // Hard warning at 30+ total photos
+    if (files.length + photos.length > 30) {
+      setShowPhotoLimitWarning({ files, count: files.length + photos.length });
+      return;
+    }
+
+    // Soft warning at 20+
+    if (files.length + photos.length > 20) {
+      setToast("For best results, we recommend 20 photos or fewer.");
+      setTimeout(() => setToast(null), 5000);
+    }
+
+    processFiles(files);
+  }, [photos.length, processFiles]);
 
   const updatePhoto = (id: number, field: string, value: string) =>
     setPhotos((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
@@ -239,17 +289,17 @@ export default function Page() {
 
   const quickGenerate = async () => {
     setQuickGenerating(true);
-    const ctx = `Trip: "${tripTitle}"${tripBrief ? `\nBrief: "${tripBrief}"` : ""}${dateDisplay ? `\nDates: ${dateDisplay}` : ""}`;
+    const previousCaptions: string[] = [];
 
     for (let i = 0; i < photos.length; i++) {
       const p = photos[i];
-      const prompt = `${WS[ws].sys}\n\nWrite content for photo ${i + 1}/${photos.length} in a travel journal.\n\n${ctx}\n\nGenerate unique content for this photo in the sequence.\n\nReturn ONLY JSON: {caption, notes, paragraph}\n- caption: 1 sentence\n- notes: 1-2 sentences\n- paragraph: 3-5 sentences\n\nJSON only, no markdown.`;
+      const prompt = quickCreatePrompt(ws, tripTitle, tripBrief, dateDisplay, i, photos.length, previousCaptions);
 
       const raw = await aiCall(prompt);
       if (raw) {
         try {
           const obj = JSON.parse(cleanJson(raw));
-          if (obj.caption) updatePhoto(p.id, "aiCaption", obj.caption);
+          if (obj.caption) { updatePhoto(p.id, "aiCaption", obj.caption); previousCaptions.push(obj.caption); }
           if (obj.notes) updatePhoto(p.id, "aiNotes", obj.notes);
           if (obj.paragraph) updatePhoto(p.id, "aiParagraph", obj.paragraph);
         } catch (e) {
@@ -321,6 +371,46 @@ export default function Page() {
           }}
         >
           {toast}
+        </div>
+      )}
+
+      {/* ═══════════════ PHOTO LIMIT WARNING ═══════════════ */}
+      {showPhotoLimitWarning && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              That's a lot of photos
+            </div>
+            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              Uploading {showPhotoLimitWarning.count} photos may cause performance issues. We recommend selecting your 15–20 best photos for the best journal.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setShowPhotoLimitWarning(null)} style={{ ...btnSecondary, fontSize: 13 }}>Select fewer</button>
+              <button onClick={() => { processFiles(showPhotoLimitWarning.files); setShowPhotoLimitWarning(null); }} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Continue anyway</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════ UPLOAD PROGRESS ═══════════════ */}
+      {uploadProgress.active && (
+        <div
+          className="fixed top-4 left-1/2 z-[500] font-body"
+          style={{
+            transform: "translateX(-50%)",
+            background: "var(--color-ink)",
+            color: "var(--color-paper)",
+            padding: "12px 24px",
+            borderRadius: 5,
+            fontSize: 13,
+            boxShadow: "0 4px 20px rgba(0,0,0,.2)",
+            minWidth: 240,
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>Processing photos... {uploadProgress.current} of {uploadProgress.total}</div>
+          <div style={{ width: "100%", height: 3, background: "rgba(255,255,255,.2)", borderRadius: 2 }}>
+            <div style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%`, height: "100%", background: "var(--color-accent)", borderRadius: 2, transition: "width .3s" }} />
+          </div>
         </div>
       )}
 
@@ -474,34 +564,43 @@ Waymark
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Trip Title</label>
               <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
+              <HelperText>This becomes the headline of your journal.</HelperText>
             </div>
 
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Timeframe</label>
               <DatePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+              <HelperText>Optional — displayed at the top of your journal.</HelperText>
             </div>
 
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Your Story</label>
               <textarea
                 style={{ ...iStyle, resize: "vertical", minHeight: 120, lineHeight: 1.65 }}
-                placeholder="Tell the story of this trip..."
+                placeholder="What made this trip special? The people, the food, the unexpected moments..."
                 value={tripBrief}
                 onChange={(e) => setTripBrief(e.target.value)}
               />
+              <HelperText>The AI uses this as inspiration to write unique content for each photo. This text also appears as the opening paragraph of your journal.</HelperText>
             </div>
 
             <div style={dropStyle} onClick={() => quickRef.current?.click()}>
               <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
               <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
+              <HelperText>Best with 5–20 photos. Add the moments that mattered most.</HelperText>
               <input ref={quickRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} />
             </div>
 
             {photos.length > 0 && (
               <div style={{ marginTop: 12 }}>
-                <div className="text-stone" style={{ fontSize: 12, marginBottom: 8 }}>
-                  {photos.length} photo{photos.length > 1 ? "s" : ""}
+                <div className="text-ink font-semibold" style={{ fontSize: 13, marginBottom: 4 }}>
+                  {photos.length} photo{photos.length > 1 ? "s" : ""} added
                 </div>
+                {uploadErrors.length > 0 && (
+                  <div className="text-stone" style={{ fontSize: 12, marginBottom: 6 }}>
+                    {uploadErrors.join(". ")}
+                  </div>
+                )}
                 <div className="flex gap-1 flex-wrap">
                   {photos.map((p) => (
                     <div key={p.id} className="relative">
@@ -522,7 +621,8 @@ Waymark
             <div className="grid grid-cols-2 gap-4" style={{ marginTop: 24 }}>
               <div>
                 <label style={labelStyle}>Visual</label>
-                <div className="flex gap-1 flex-wrap">
+                <HelperText>Sets the look — fonts, colors, and mood.</HelperText>
+                <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
                   {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
                     <button key={k} onClick={() => setVk(k)} style={chip(vk === k)}>{s.label}</button>
                   ))}
@@ -530,7 +630,8 @@ Waymark
               </div>
               <div>
                 <label style={labelStyle}>Voice</label>
-                <div className="flex gap-1 flex-wrap">
+                <HelperText>Sets the writing style the AI uses.</HelperText>
+                <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
                   {(Object.entries(WS) as [WordStyleKey, typeof WS[WordStyleKey]][]).map(([k, w]) => (
                     <button key={k} onClick={() => setWs(k)} style={chip(ws === k)}>{w.label}</button>
                   ))}
@@ -538,8 +639,9 @@ Waymark
               </div>
             </div>
 
-            <label style={{ ...labelStyle, marginTop: 16, marginBottom: 8 }}>Layout</label>
-            <div className="grid grid-cols-5 gap-1.5">
+            <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Layout</label>
+            <HelperText>How your photos are arranged in the journal.</HelperText>
+            <div className="grid grid-cols-5 gap-1.5" style={{ marginTop: 8 }}>
               {(Object.entries(LO) as [LayoutKey, typeof LO[LayoutKey]][]).map(([k, l]) => (
                 <div
                   key={k}
@@ -642,21 +744,24 @@ Waymark
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Trip Title</label>
             <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
+            <HelperText>This becomes the headline of your journal.</HelperText>
           </div>
 
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Timeframe</label>
             <DatePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
+            <HelperText>Optional — displayed at the top of your journal.</HelperText>
           </div>
 
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Trip Brief</label>
             <textarea
               style={{ ...iStyle, resize: "vertical", minHeight: 100, lineHeight: 1.65 }}
-              placeholder="The vibe, what made it special."
+              placeholder="The vibe, what made it special, the story behind the trip..."
               value={tripBrief}
               onChange={(e) => setTripBrief(e.target.value)}
             />
+            <HelperText>This appears as the opening paragraph of your journal. The AI also uses it as context when writing about your photos.</HelperText>
           </div>
 
           <div className="flex justify-between" style={{ marginTop: 36 }}>
@@ -685,10 +790,17 @@ Waymark
           <div style={dropStyle} onClick={() => fullRef.current?.click()}>
             <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
             <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
+            <HelperText>Best with 5–20 photos.</HelperText>
             <input ref={fullRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} />
           </div>
 
-          <div className="grid gap-2.5" style={{ marginTop: 16 }}>
+          {photos.length > 0 && (
+            <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12 }}>
+              {photos.length} photo{photos.length > 1 ? "s" : ""} added
+            </div>
+          )}
+
+          <div className="grid gap-2.5" style={{ marginTop: 12 }}>
             {photos.map((p, i) => (
               <PhotoCard
                 key={p.id}
@@ -792,10 +904,12 @@ Waymark
             ))}
           </div>
 
-          <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
             <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} />
           </div>
+          <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
+          <div style={{ marginTop: 8 }} />
 
           <div className="grid gap-2" style={{ marginBottom: 8 }}>
             {photos.map((p) => (
