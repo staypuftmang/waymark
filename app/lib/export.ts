@@ -97,14 +97,45 @@ function findEntryBounds(element: HTMLElement): EntryBounds[] {
   return entries.sort((a, b) => a.top - b.top);
 }
 
+/**
+ * Find secondary (soft) break points — tops of block-level text elements.
+ * Used as fallback when a photo entry is too tall to fit on one page.
+ * Breaking at these points still produces clean breaks (between paragraphs,
+ * between caption/notes/body), not mid-sentence.
+ */
+function findSoftBreaks(element: HTMLElement): number[] {
+  const elementRect = element.getBoundingClientRect();
+  const breaks = new Set<number>();
+
+  // Scan all block-level text containers inside the element
+  const textNodes = element.querySelectorAll("p, div");
+  textNodes.forEach((node) => {
+    const el = node as HTMLElement;
+    if (el === element) return;
+    // Skip tiny/decorative elements
+    if (el.offsetHeight < 12) return;
+    // Skip elements that contain images (these are photo wrappers, not text blocks)
+    if (el.querySelector("img")) return;
+    // Must contain text directly
+    if (!el.textContent || el.textContent.trim().length < 10) return;
+
+    const rect = el.getBoundingClientRect();
+    const top = Math.round(rect.top - elementRect.top);
+    if (top > 50) breaks.add(top);
+  });
+
+  return [...breaks].sort((a, b) => a - b);
+}
+
 export async function exportPDF(elementId: string, title: string, bgColor: string, captionFont: string): Promise<void> {
   const element = document.getElementById(elementId);
   if (!element) throw new Error("Element not found");
 
   const restore = prepareForCapture(element);
 
-  // Collect entry bounds from DOM BEFORE capture
+  // Collect entry bounds AND soft break points BEFORE capture
   const entryBounds = findEntryBounds(element);
+  const softBreaks = findSoftBreaks(element);
 
   const canvas = await html2canvas(element, {
     scale: 3,
@@ -130,6 +161,7 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
     top: e.top * captureScale,
     bottom: e.bottom * captureScale,
   }));
+  const canvasSoftBreaks = softBreaks.map((y) => y * captureScale);
 
   // How many canvas pixels fit in one PDF page
   const pdfScale = contentWidth / canvas.width;
@@ -167,22 +199,30 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       pages.push({ start: cursor, end: breakAt });
       cursor = breakAt;
     } else {
-      // No entry fully fits on this page (e.g. cover + first big entry
-      // together exceed one page). Fill the page to capacity rather than
-      // leaving it mostly empty. Find the best entry TOP near the page
-      // limit to avoid cutting through a photo — but if the page would
-      // be less than half full, just use the full page limit.
-      const nearestTop = canvasEntries
-        .map((e) => e.top)
-        .filter((t) => t > cursor && t <= pageLimit && t >= pageLimit * 0.5)
-        .sort((a, b) => b - a)[0];
+      // No entry fully fits on this page. Two options:
+      //   (a) Break before the next entry top — clean but may waste space
+      //   (b) Break at a soft break (top of a text block) within the overflowing
+      //       entry — keeps the page full and never cuts mid-sentence
+      // Prefer whichever gets us closer to the page limit without overflow.
 
-      if (nearestTop) {
-        // Break just before this entry's photo
-        pages.push({ start: cursor, end: nearestTop });
-        cursor = nearestTop;
+      const nearestEntryTop = canvasEntries
+        .map((e) => e.top)
+        .filter((t) => t > cursor && t <= pageLimit)
+        .sort((a, b) => b - a)[0] ?? -1;
+
+      const nearestSoftBreak = canvasSoftBreaks
+        .filter((t) => t > cursor + maxCanvasPerPage * 0.4 && t <= pageLimit)
+        .sort((a, b) => b - a)[0] ?? -1;
+
+      // Choose the larger (closer to page limit) break point
+      const best = Math.max(nearestEntryTop, nearestSoftBreak);
+
+      if (best > cursor) {
+        pages.push({ start: cursor, end: best });
+        cursor = best;
       } else {
-        // No good break — fill the page completely
+        // Absolute fallback — fill the page completely (may cut mid-content,
+        // but only if no break point exists at all)
         pages.push({ start: cursor, end: pageLimit });
         cursor = pageLimit;
       }
