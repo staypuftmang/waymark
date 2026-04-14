@@ -212,13 +212,7 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
     const sliceDataUrl = sliceCanvas.toDataURL("image/jpeg", 0.95);
     pdf.addImage(sliceDataUrl, "JPEG", margin, margin, contentWidth, destH);
 
-    // Footer on last page — 40-60px gap below content (50pt in PDF space)
-    if (i === pages.length - 1) {
-      const footerY = Math.min(margin + destH + 50, pdfHeight - 30);
-      pdf.setFontSize(10);
-      pdf.setTextColor(150, 150, 150);
-      pdf.text("Made with Waymark \u00B7 mywaymarks.com", pdfWidth / 2, footerY, { align: "center" });
-    }
+    // Footer is already in the captured DOM — no need to add a second one via jsPDF
   }
 
   const filename = `Waymark - ${sanitizeFilename(title)}.pdf`;
