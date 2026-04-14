@@ -167,65 +167,61 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
   const pdfScale = contentWidth / canvas.width;
   const maxCanvasPerPage = contentHeight / pdfScale;
 
-  // Build page slices — fill each page as full as possible.
-  // Only break when the NEXT entry's bottom would exceed the page.
+  // Combine all candidate break points into a single ranked list.
+  // Each candidate is a canvas Y position where we can safely end a page.
+  // Priority: entry bottoms > soft breaks (text block tops) > entry tops.
+  //
+  // Algorithm for each page:
+  //   1. Walk backwards from pageLimit looking for the BEST break candidate.
+  //   2. "Best" = largest Y position <= pageLimit and > cursor.
+  //   3. If the best break fills < 50% of the page, fall back to pageLimit
+  //      (accept cutting content rather than wasting a half-empty page).
+
   const pages: { start: number; end: number }[] = [];
   let cursor = 0;
+
+  // Collect all possible break points in canvas coordinates
+  const allBreaks: number[] = [];
+  canvasEntries.forEach((e) => {
+    allBreaks.push(e.bottom); // prefer entry ends
+    allBreaks.push(e.top);    // fallback: break before entry
+  });
+  canvasSoftBreaks.forEach((b) => allBreaks.push(b));
+  // Deduplicate and sort ascending
+  const uniqueBreaks = [...new Set(allBreaks)].sort((a, b) => a - b);
 
   while (cursor < canvas.height) {
     const pageLimit = cursor + maxCanvasPerPage;
 
     if (pageLimit >= canvas.height) {
-      // Everything remaining fits on this page
       pages.push({ start: cursor, end: canvas.height });
       break;
     }
 
-    // Find the last entry whose BOTTOM fits within this page.
-    // The entry just needs to end before the page limit — it doesn't matter
-    // where it starts, since earlier content (cover, brief, previous entries)
-    // is already on this page.
-    let breakAt = -1;
-    for (let i = canvasEntries.length - 1; i >= 0; i--) {
-      const entry = canvasEntries[i];
-      if (entry.bottom > cursor && entry.bottom <= pageLimit) {
-        breakAt = entry.bottom;
+    // Find the largest break point that fits on this page
+    let best = -1;
+    for (let i = uniqueBreaks.length - 1; i >= 0; i--) {
+      const b = uniqueBreaks[i];
+      if (b > cursor && b <= pageLimit) {
+        best = b;
         break;
       }
     }
 
-    if (breakAt > cursor) {
-      // Break after the last entry that fully fits
-      pages.push({ start: cursor, end: breakAt });
-      cursor = breakAt;
+    // Reject breaks that waste too much of the page (< 50% utilization).
+    // Exception: if the next content (entry or soft break) is past pageLimit
+    // entirely, we have to break somewhere — use pageLimit (hard cut).
+    const minUtilization = cursor + maxCanvasPerPage * 0.5;
+
+    if (best >= minUtilization) {
+      // Good break — use it
+      pages.push({ start: cursor, end: best });
+      cursor = best;
     } else {
-      // No entry fully fits on this page. Two options:
-      //   (a) Break before the next entry top — clean but may waste space
-      //   (b) Break at a soft break (top of a text block) within the overflowing
-      //       entry — keeps the page full and never cuts mid-sentence
-      // Prefer whichever gets us closer to the page limit without overflow.
-
-      const nearestEntryTop = canvasEntries
-        .map((e) => e.top)
-        .filter((t) => t > cursor && t <= pageLimit)
-        .sort((a, b) => b - a)[0] ?? -1;
-
-      const nearestSoftBreak = canvasSoftBreaks
-        .filter((t) => t > cursor + maxCanvasPerPage * 0.4 && t <= pageLimit)
-        .sort((a, b) => b - a)[0] ?? -1;
-
-      // Choose the larger (closer to page limit) break point
-      const best = Math.max(nearestEntryTop, nearestSoftBreak);
-
-      if (best > cursor) {
-        pages.push({ start: cursor, end: best });
-        cursor = best;
-      } else {
-        // Absolute fallback — fill the page completely (may cut mid-content,
-        // but only if no break point exists at all)
-        pages.push({ start: cursor, end: pageLimit });
-        cursor = pageLimit;
-      }
+      // Either no break found, or the best break wastes too much space.
+      // Fill the page completely to avoid a half-empty page.
+      pages.push({ start: cursor, end: pageLimit });
+      cursor = pageLimit;
     }
   }
 
