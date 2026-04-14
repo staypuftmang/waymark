@@ -3,6 +3,7 @@
 import { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
+import { useIsMobile } from "@/app/lib/useMediaQuery";
 
 interface LayoutProps {
   photos: Photo[];
@@ -12,6 +13,8 @@ interface LayoutProps {
 
 export default function Magazine({ photos, vs, vk }: LayoutProps) {
   const br = getBorderRadius(vk);
+  const isMobile = useIsMobile();
+
   const groups: Photo[][] = [];
   let i = 0;
   while (i < photos.length) {
@@ -36,6 +39,24 @@ export default function Magazine({ photos, vs, vk }: LayoutProps) {
                 alt=""
               />
               <PhotoCaption photo={gr[0]} vs={vs} vk={vk} />
+            </div>
+          ) : isMobile ? (
+            // Stack pairs vertically on mobile — natural proportions, no cropping
+            <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+              {gr.map((p) => (
+                <div key={p.id}>
+                  <img
+                    src={p.src}
+                    style={{
+                      width: "100%",
+                      borderRadius: br,
+                      display: "block",
+                    }}
+                    alt=""
+                  />
+                  <PhotoCaption photo={p} vs={vs} vk={vk} />
+                </div>
+              ))}
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
