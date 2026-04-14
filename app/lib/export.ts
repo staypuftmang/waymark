@@ -167,27 +167,24 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
   const pdfScale = contentWidth / canvas.width;
   const maxCanvasPerPage = contentHeight / pdfScale;
 
-  // Combine all candidate break points into a single ranked list.
-  // Each candidate is a canvas Y position where we can safely end a page.
-  // Priority: entry bottoms > soft breaks (text block tops) > entry tops.
+  // Only use entry BOTTOMS and soft breaks as valid break points.
+  // Entry tops are excluded — breaking before a photo wastes page space.
   //
   // Algorithm for each page:
-  //   1. Walk backwards from pageLimit looking for the BEST break candidate.
-  //   2. "Best" = largest Y position <= pageLimit and > cursor.
-  //   3. If the best break fills < 50% of the page, fall back to pageLimit
-  //      (accept cutting content rather than wasting a half-empty page).
+  //   1. Walk backwards from pageLimit looking for the largest break candidate.
+  //   2. If found, use it. Otherwise, use pageLimit (hard cut).
+  //
+  // This guarantees pages are always filled: either we break at a clean
+  // boundary (end of entry / between text blocks), or we fill the page
+  // completely even if it means cutting through a photo or paragraph.
 
   const pages: { start: number; end: number }[] = [];
   let cursor = 0;
 
-  // Collect all possible break points in canvas coordinates
+  // Collect only "clean" break points (entry ends + soft breaks between text blocks)
   const allBreaks: number[] = [];
-  canvasEntries.forEach((e) => {
-    allBreaks.push(e.bottom); // prefer entry ends
-    allBreaks.push(e.top);    // fallback: break before entry
-  });
+  canvasEntries.forEach((e) => allBreaks.push(e.bottom));
   canvasSoftBreaks.forEach((b) => allBreaks.push(b));
-  // Deduplicate and sort ascending
   const uniqueBreaks = [...new Set(allBreaks)].sort((a, b) => a - b);
 
   while (cursor < canvas.height) {
@@ -198,7 +195,7 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       break;
     }
 
-    // Find the largest break point that fits on this page
+    // Find the largest clean break point that fits on this page
     let best = -1;
     for (let i = uniqueBreaks.length - 1; i >= 0; i--) {
       const b = uniqueBreaks[i];
@@ -208,18 +205,14 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       }
     }
 
-    // Reject breaks that waste too much of the page (< 50% utilization).
-    // Exception: if the next content (entry or soft break) is past pageLimit
-    // entirely, we have to break somewhere — use pageLimit (hard cut).
-    const minUtilization = cursor + maxCanvasPerPage * 0.5;
-
-    if (best >= minUtilization) {
-      // Good break — use it
+    if (best > cursor) {
+      // Clean break found — use it
       pages.push({ start: cursor, end: best });
       cursor = best;
     } else {
-      // Either no break found, or the best break wastes too much space.
-      // Fill the page completely to avoid a half-empty page.
+      // No clean break fits on this page. Fill the page completely.
+      // This may cut through a photo or paragraph, but it's better than
+      // wasting half a page.
       pages.push({ start: cursor, end: pageLimit });
       cursor = pageLimit;
     }
