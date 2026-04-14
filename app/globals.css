@@ -80,3 +80,50 @@ body {
 
 .generating-dot:nth-child(2) { animation-delay: 0.2s; }
 .generating-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Journal Layout Responsive Rules ── */
+/* These use pure CSS media queries so they apply immediately on mobile
+   without waiting for JS hydration. */
+
+.wm-magazine-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.wm-magazine-pair > div > img.wm-pair-img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.wm-grid-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .wm-magazine-pair {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .wm-magazine-pair > div > img.wm-pair-img {
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+
+  .wm-grid-layout {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .wm-classic-entry {
+    margin-bottom: 20px !important;
+  }
+
+  .wm-classic-divider {
+    margin-top: 18px !important;
+    margin-bottom: 18px !important;
+  }
+}

@@ -3,7 +3,6 @@
 import { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
-import { useIsMobile } from "@/app/lib/useMediaQuery";
 
 interface LayoutProps {
   photos: Photo[];
@@ -13,9 +12,8 @@ interface LayoutProps {
 
 export default function Grid({ photos, vs, vk }: LayoutProps) {
   const br = getBorderRadius(vk);
-  const isMobile = useIsMobile();
   return (
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 28 : 16 }}>
+    <div className="wm-grid-layout">
       {photos.map((p) => (
         <div key={p.id}>
           <img
