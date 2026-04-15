@@ -177,25 +177,31 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
   const pdfScale = contentWidth / canvas.width;
   const maxCanvasPerPage = contentHeight / pdfScale;
 
-  // Only use entry BOTTOMS and soft breaks as valid break points.
-  // Entry tops are excluded — breaking before a photo wastes page space.
+  // Page-break algorithm:
   //
-  // Algorithm for each page:
-  //   1. Walk backwards from pageLimit looking for the largest break candidate.
-  //   2. If found, use it. Otherwise, use pageLimit (hard cut).
+  // Goal: keep entries (photo + caption + notes + paragraph) intact whenever
+  // possible. Only split an entry across pages if it's physically taller than
+  // a single page.
   //
-  // This guarantees pages are always filled: either we break at a clean
-  // boundary (end of entry / between text blocks), or we fill the page
-  // completely even if it means cutting through a photo or paragraph.
+  // For each page:
+  //   1. Find the largest entry bottom that fits → break there (entry kept whole)
+  //   2. If no entry bottom fits, check whether an "oversize entry" (taller than
+  //      one page) starts on this page. If so, use a soft break within it.
+  //   3. Otherwise: leave the rest of the page blank and start next page at the
+  //      next entry top (entries pushed to next page intact).
 
   const pages: { start: number; end: number }[] = [];
   let cursor = 0;
 
-  // Collect only "clean" break points (entry ends + soft breaks between text blocks)
-  const allBreaks: number[] = [];
-  canvasEntries.forEach((e) => allBreaks.push(e.bottom));
-  canvasSoftBreaks.forEach((b) => allBreaks.push(b));
-  const uniqueBreaks = [...new Set(allBreaks)].sort((a, b) => a - b);
+  // Mark entries that are taller than a single page — these are the only ones
+  // allowed to be split across pages
+  const oversizeEntries = canvasEntries.filter(
+    (e) => e.bottom - e.top > maxCanvasPerPage
+  );
+
+  function isInsideOversizeEntry(y: number): boolean {
+    return oversizeEntries.some((e) => y > e.top && y < e.bottom);
+  }
 
   while (cursor < canvas.height) {
     const pageLimit = cursor + maxCanvasPerPage;
@@ -205,26 +211,69 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       break;
     }
 
-    // Find the largest clean break point that fits on this page
-    let best = -1;
-    for (let i = uniqueBreaks.length - 1; i >= 0; i--) {
-      const b = uniqueBreaks[i];
+    // Step 1: Find the largest entry BOTTOM that fits
+    let bestEntryBottom = -1;
+    for (let i = canvasEntries.length - 1; i >= 0; i--) {
+      const b = canvasEntries[i].bottom;
       if (b > cursor && b <= pageLimit) {
-        best = b;
+        bestEntryBottom = b;
         break;
       }
     }
 
-    if (best > cursor) {
-      // Clean break found — use it
-      pages.push({ start: cursor, end: best });
-      cursor = best;
-    } else {
-      // No clean break fits on this page. Fill the page completely.
-      // This may cut through a photo or paragraph, but it's better than
-      // wasting half a page.
+    if (bestEntryBottom > cursor) {
+      pages.push({ start: cursor, end: bestEntryBottom });
+      cursor = bestEntryBottom;
+      continue;
+    }
+
+    // Step 2: No entry fits. Check if there's an oversize entry starting on
+    // this page that we need to split.
+    const oversizeStartingHere = oversizeEntries.find(
+      (e) => e.top >= cursor && e.top < pageLimit
+    );
+    const oversizeContinuingHere = oversizeEntries.find(
+      (e) => e.top < cursor && e.bottom > cursor
+    );
+    const activeOversize = oversizeStartingHere || oversizeContinuingHere;
+
+    if (activeOversize) {
+      // Find the largest soft break INSIDE this oversize entry that fits
+      let bestSoft = -1;
+      for (let i = canvasSoftBreaks.length - 1; i >= 0; i--) {
+        const b = canvasSoftBreaks[i];
+        if (b > cursor && b <= pageLimit && isInsideOversizeEntry(b)) {
+          bestSoft = b;
+          break;
+        }
+      }
+
+      if (bestSoft > cursor) {
+        pages.push({ start: cursor, end: bestSoft });
+        cursor = bestSoft;
+        continue;
+      }
+
+      // No soft break fits inside the oversize entry — fall back to hard cut
       pages.push({ start: cursor, end: pageLimit });
       cursor = pageLimit;
+      continue;
+    }
+
+    // Step 3: No fitting entry, no oversize entry on this page.
+    // Skip to the next entry's top (leaving the rest of this page blank).
+    const nextEntryTop = canvasEntries
+      .map((e) => e.top)
+      .filter((t) => t > cursor)
+      .sort((a, b) => a - b)[0];
+
+    if (nextEntryTop !== undefined && nextEntryTop > cursor) {
+      pages.push({ start: cursor, end: nextEntryTop });
+      cursor = nextEntryTop;
+    } else {
+      // No more entries — render whatever's left
+      pages.push({ start: cursor, end: canvas.height });
+      cursor = canvas.height;
     }
   }
 
