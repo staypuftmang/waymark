@@ -73,9 +73,19 @@ function findEntryBounds(element: HTMLElement): EntryBounds[] {
       const parent = entry.parentElement;
       if (!parent || parent === element) break;
 
+      // Special case: Magazine layout pair grid. Both columns of a pair must
+      // be treated as ONE entry (the entire group), otherwise asymmetric text
+      // heights cause the shorter column to set the break point and truncate
+      // the longer column mid-sentence.
+      if (parent.classList.contains("wm-magazine-pair")) {
+        // Walk up past the pair grid to the group wrapper
+        entry = parent.parentElement;
+        continue;
+      }
+
       const parentChildren = parent.children.length;
       // Stop when the parent has multiple children — each child is a separate entry.
-      // This works for all layouts: block (Classic), grid (Magazine/Grid), flex (Filmstrip/Stacked).
+      // This works for all layouts: block (Classic), grid (Grid), flex (Filmstrip/Stacked).
       if (parent === element || parentChildren > 1) {
         break;
       }
