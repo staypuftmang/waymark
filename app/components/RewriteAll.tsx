@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Photo, WordStyleKey } from "@/app/lib/types";
+import { track } from "@vercel/analytics";
+import { Photo, WordStyleKey, VisualStyleKey } from "@/app/lib/types";
 import { cleanJson } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
 import { batchRewritePrompt } from "@/app/lib/prompts";
@@ -12,6 +13,7 @@ interface RewriteAllProps {
   title: string;
   brief: string;
   wordStyle: WordStyleKey;
+  visualStyle: VisualStyleKey;
   dateDisplay: string;
 }
 
@@ -21,12 +23,14 @@ interface StagedResult {
   paragraph?: string;
 }
 
-export default function RewriteAll({ photos, onUpdate: up, title, brief, wordStyle: ws, dateDisplay: dd }: RewriteAllProps) {
+export default function RewriteAll({ photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd }: RewriteAllProps) {
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
 
   const run = async () => {
     setLoading(true);
+    const eligibleCount = photos.filter((p) => p.caption || p.notes || p.aiCaption || p.aiNotes).length;
+    track("ai_generated", { mode: "rewrite_all", photoCount: eligibleCount, wordStyle: ws, visualStyle: vk });
     const res: Record<number, StagedResult> = {};
     const previousOutputs: string[] = [];
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, LayoutKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { exportPDF, exportImage } from "@/app/lib/export";
@@ -29,11 +30,20 @@ export default function JournalPreview({
   layoutKey: lo,
   onEdit,
   onLogoClick,
-  setVisualStyleKey: setVk,
-  setLayoutKey: setLo,
+  setVisualStyleKey: setVkProp,
+  setLayoutKey: setLoProp,
 }: JournalPreviewProps) {
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
+
+  const setVk = (k: VisualStyleKey) => {
+    setVkProp(k);
+    track("style_selected", { style: k });
+  };
+  const setLo = (k: LayoutKey) => {
+    setLoProp(k);
+    track("layout_selected", { layout: k });
+  };
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -53,6 +63,7 @@ export default function JournalPreview({
   const handleExportPDF = async () => {
     setExporting("pdf");
     setDownloadOpen(false);
+    track("download", { type: "pdf", visualStyle: vk, layout: lo, photoCount: photos.length });
     try {
       await exportPDF("journal-root", tripTitle, vs.bg, vs.fontCaption);
     } catch (e) {
@@ -64,6 +75,7 @@ export default function JournalPreview({
   const handleExportImage = async () => {
     setExporting("image");
     setDownloadOpen(false);
+    track("download", { type: "image", visualStyle: vk, layout: lo, photoCount: photos.length });
     try {
       await exportImage("journal-root", tripTitle, vs.bg);
     } catch (e) {

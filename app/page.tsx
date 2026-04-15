@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt } from "@/app/lib/prompts";
@@ -131,6 +132,19 @@ export default function Page() {
     });
   }, []);
 
+  // ── Track journal_completed when reaching the preview page ──
+  useEffect(() => {
+    if (step === 99 && photos.length > 0) {
+      track("journal_completed", {
+        visualStyle: vk,
+        layout: lo,
+        wordStyle: ws,
+        photoCount: photos.length,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   // ── Auto-save with 2s debounce ──
   useEffect(() => {
     if (!appReady || mode === null) return;
@@ -222,6 +236,10 @@ export default function Page() {
     if (errors.length > 0) {
       setUploadErrors((prev) => [...prev, `${errors.length} photo${errors.length > 1 ? "s" : ""} couldn't be processed`]);
     }
+    const successCount = validFiles.length - errors.length;
+    if (successCount > 0) {
+      track("photos_uploaded", { count: successCount });
+    }
   }, []);
 
   const addPhotos = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -291,6 +309,7 @@ export default function Page() {
   const quickGenerate = async () => {
     setQuickGenerating(true);
     setGenProgress({ current: 0, total: photos.length });
+    track("ai_generated", { mode: "quick", photoCount: photos.length, wordStyle: ws, visualStyle: vk });
     const previousCaptions: string[] = [];
 
     for (let i = 0; i < photos.length; i++) {
@@ -547,7 +566,7 @@ Waymark
                 ].map(({ m, icon, bg, t, d }) => (
                   <button
                     key={m}
-                    onClick={() => { setMode(m); setStep(0); }}
+                    onClick={() => { setMode(m); setStep(0); track("journal_started", { mode: m }); }}
                     className="flex items-center gap-3.5 border border-border bg-card cursor-pointer text-left w-full"
                     style={{ padding: "16px 20px", borderRadius: 5 }}
                   >
@@ -653,7 +672,7 @@ Waymark
                 <HelperText>Sets the look — fonts, colors, and mood.</HelperText>
                 <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
                   {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
-                    <button key={k} onClick={() => setVk(k)} style={chip(vk === k)}>{s.label}</button>
+                    <button key={k} onClick={() => { setVk(k); track("style_selected", { style: k }); }} style={chip(vk === k)}>{s.label}</button>
                   ))}
                 </div>
               </div>
@@ -674,7 +693,7 @@ Waymark
               {(Object.entries(LO) as [LayoutKey, typeof LO[LayoutKey]][]).map(([k, l]) => (
                 <div
                   key={k}
-                  onClick={() => setLo(k)}
+                  onClick={() => { setLo(k); track("layout_selected", { layout: k }); }}
                   className="text-center cursor-pointer"
                   style={{
                     padding: "10px 4px",
@@ -725,7 +744,7 @@ Waymark
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -876,7 +895,7 @@ Waymark
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", marginBottom: 24 }}
           >
             {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
-              <StylePreview key={k} styleKey={k} style={s} selected={vk === k} onClick={() => setVk(k)} />
+              <StylePreview key={k} styleKey={k} style={s} selected={vk === k} onClick={() => { setVk(k); track("style_selected", { style: k }); }} />
             ))}
           </div>
 
@@ -935,7 +954,7 @@ Waymark
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
