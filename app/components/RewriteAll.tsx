@@ -41,7 +41,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
 
       const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
 
-      const raw = await aiCall(prompt);
+      const raw = await aiCall(prompt, p.src);
       if (raw) {
         try {
           const parsed = JSON.parse(cleanJson(raw));

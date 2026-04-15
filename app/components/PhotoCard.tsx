@@ -45,7 +45,7 @@ export default function PhotoCard({
     const prompt = field === "caption"
       ? rewriteCaptionPrompt(ws, title, brief, raw)
       : rewriteNotesPrompt(ws, title, brief, raw);
-    const t = await aiCall(prompt);
+    const t = await aiCall(prompt, p.src);
     if (t) up(p.id, aiField, t);
     setLoading(false);
   };
@@ -54,7 +54,7 @@ export default function PhotoCard({
     setLP(true);
     const capText = p.aiCaption || p.caption;
     const notesText = p.aiNotes || p.notes;
-    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText));
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src);
     if (t) {
       up(p.id, "aiParagraph", t);
       setSP(true);

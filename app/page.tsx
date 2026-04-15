@@ -5,8 +5,9 @@ import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt } from "@/app/lib/prompts";
-import { aiCall, setFallbackListener } from "@/app/lib/ai";
+import { aiCall, setFallbackListener, setRateLimitListener } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
+import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
 import PhotoStyleRow from "@/app/components/PhotoStyleRow";
@@ -117,11 +118,15 @@ export default function Page() {
   const quickRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Load saved state on mount + register fallback listener ──
+  // ── Load saved state on mount + register fallback + rate-limit listeners ──
   useEffect(() => {
     setFallbackListener(() => {
       setToast("AI model busy — using faster fallback model");
       setTimeout(() => setToast(null), 5000);
+    });
+    setRateLimitListener((msg) => {
+      setToast(msg);
+      setTimeout(() => setToast(null), 10000);
     });
     loadState().then((saved) => {
       if (saved && saved.tripTitle) {
@@ -205,15 +210,11 @@ export default function Page() {
     setUploadProgress({ active: true, current: 0, total: validFiles.length });
     const errors: string[] = [];
 
+    // Process sequentially to avoid memory spikes from parallel canvas operations
     for (let i = 0; i < validFiles.length; i++) {
       setUploadProgress({ active: true, current: i + 1, total: validFiles.length });
       try {
-        const src = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve(ev.target?.result as string);
-          reader.onerror = () => reject(new Error("Failed to read file"));
-          reader.readAsDataURL(validFiles[i]);
-        });
+        const src = await compressImage(validFiles[i]);
         setPhotos((p) => [
           ...p,
           {
@@ -317,7 +318,7 @@ export default function Page() {
       const p = photos[i];
       const prompt = quickCreatePrompt(ws, tripTitle, tripBrief, dateDisplay, i, photos.length, previousCaptions);
 
-      const raw = await aiCall(prompt);
+      const raw = await aiCall(prompt, p.src);
       if (raw) {
         try {
           const obj = JSON.parse(cleanJson(raw));
