@@ -38,12 +38,19 @@ export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: Refine
     );
   }
 
-  // Chip selection color is FIXED to the base design system accent —
-  // never the current visual style's accent. This prevents e.g. the
-  // Brutalist red (#FF0000) from being applied to chip borders, which
-  // made it look like the old chip "kept" its selection when switching.
+  // Chip selection colors are FIXED to the base design system — they
+  // never depend on the current visual style's accent. This prevents
+  // e.g. Brutalist red (#FF0000) from being applied to chip borders.
   const CHIP_ACCENT = "#9A3412";
   const CHIP_ACCENT_BG = "rgba(154,52,18,0.12)";
+
+  // Use rgba() for the unselected background rather than `${vs.fg}0A`.
+  // Some VS.fg values use 3-char hex (e.g. Brutalist's "#000"), which
+  // when concatenated with "0A" produces an invalid 5-char string and
+  // the browser drops the background entirely — making stale styles
+  // from a previous selection appear to linger.
+  const panelIsDark = vs.bg.startsWith("#0") || vs.bg.toLowerCase() === "#000";
+  const CHIP_BG_UNSEL = panelIsDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
 
   const pill = (key: string, selected: boolean, onClick: () => void, label: string) => (
     <button
@@ -63,7 +70,7 @@ export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: Refine
         borderWidth: "1.5px",
         borderStyle: "solid",
         borderColor: selected ? CHIP_ACCENT : "transparent",
-        background: selected ? CHIP_ACCENT_BG : `${vs.fg}0A`,
+        background: selected ? CHIP_ACCENT_BG : CHIP_BG_UNSEL,
         color: vs.fg,
         fontSize: 11,
         fontWeight: selected ? 700 : 400,
