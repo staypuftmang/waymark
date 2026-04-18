@@ -147,20 +147,23 @@ export default function PhotoCard({
           </div>
           <button
             onClick={() => onToggleCover(p.id)}
-            className="bg-transparent cursor-pointer font-body"
+            className="cursor-pointer font-body"
             style={{
               fontSize: 9,
-              fontWeight: 600,
+              fontWeight: 700,
+              letterSpacing: 0.5,
               padding: "3px 6px",
               borderRadius: 3,
-              border: isCover ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
-              color: isCover ? "var(--color-accent)" : "var(--color-stone)",
+              border: "none",
+              background: isCover ? "var(--color-ink)" : "var(--color-accent)",
+              color: "#fff",
               whiteSpace: "nowrap",
               width: 80,
               textAlign: "center",
+              textTransform: "uppercase",
             }}
           >
-            {isCover ? "Cover \u2713" : "Set as cover"}
+            {isCover ? "\u2713 Cover" : "Set as cover"}
           </button>
         </div>
 

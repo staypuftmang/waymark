@@ -181,11 +181,11 @@ export default function PhotoStyleRow({
             style={{
               fontSize: 11,
               fontWeight: 600,
-              padding: "4px 10px",
+              padding: "5px 12px",
               borderRadius: 3,
-              border: `1px solid var(--color-accent)`,
-              background: isCover ? "var(--color-accent)" : "transparent",
-              color: isCover ? "#fff" : "var(--color-accent)",
+              border: "none",
+              background: isCover ? "var(--color-ink)" : "var(--color-accent)",
+              color: "#fff",
               whiteSpace: "nowrap",
               marginLeft: 8,
             }}

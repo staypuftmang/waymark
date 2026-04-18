@@ -688,26 +688,22 @@ Waymark
                     {uploadErrors.join(". ")}
                   </div>
                 )}
-                <HelperText>Tap a photo to set it as your cover.</HelperText>
-                <div className="flex gap-2 flex-wrap" style={{ marginTop: 8 }}>
+                <HelperText>Pick one photo as your journal cover.</HelperText>
+                <div className="flex gap-3 flex-wrap" style={{ marginTop: 10 }}>
                   {photos.map((p) => {
                     const isCover = coverPhotoId === p.id;
                     return (
-                      <div key={p.id} className="relative">
-                        <button
-                          onClick={() => toggleCover(p.id)}
-                          className="bg-transparent cursor-pointer p-0"
-                          style={{
-                            border: isCover ? "2px solid var(--color-accent)" : "2px solid transparent",
-                            borderRadius: 5,
-                            display: "block",
-                          }}
-                          aria-label={isCover ? "Remove as cover" : "Set as cover"}
-                        >
+                      <div key={p.id} className="flex flex-col items-center" style={{ gap: 4 }}>
+                        <div className="relative">
                           <img
                             src={p.src}
                             className="object-cover block"
-                            style={{ width: 72, height: 72, borderRadius: 3 }}
+                            style={{
+                              width: 72,
+                              height: 72,
+                              borderRadius: 4,
+                              border: isCover ? "2px solid var(--color-accent)" : "2px solid transparent",
+                            }}
                             alt=""
                           />
                           {isCover && (
@@ -731,14 +727,32 @@ Waymark
                               Cover &#x2713;
                             </div>
                           )}
-                        </button>
+                          <button
+                            onClick={() => removePhoto(p.id)}
+                            className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
+                            style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
+                            aria-label="Remove photo"
+                          >
+                            &#x00D7;
+                          </button>
+                        </div>
                         <button
-                          onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
-                          className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
-                          style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
-                          aria-label="Remove photo"
+                          onClick={() => toggleCover(p.id)}
+                          className="cursor-pointer font-body"
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: 0.5,
+                            padding: "3px 6px",
+                            borderRadius: 3,
+                            border: "none",
+                            background: isCover ? "var(--color-ink)" : "var(--color-accent)",
+                            color: "#fff",
+                            whiteSpace: "nowrap",
+                            textTransform: "uppercase",
+                          }}
                         >
-                          &#x00D7;
+                          {isCover ? "\u2713 Cover" : "Set as cover"}
                         </button>
                       </div>
                     );
