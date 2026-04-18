@@ -688,47 +688,53 @@ Waymark
                     {uploadErrors.join(". ")}
                   </div>
                 )}
-                <HelperText>Pick one photo as your journal cover.</HelperText>
+                <HelperText>Tap any photo to set it as your cover. (optional)</HelperText>
                 <div className="flex gap-3 flex-wrap" style={{ marginTop: 10 }}>
                   {photos.map((p) => {
                     const isCover = coverPhotoId === p.id;
                     return (
                       <div key={p.id} className="flex flex-col items-center" style={{ gap: 4 }}>
                         <div className="relative">
-                          <img
-                            src={p.src}
-                            className="object-cover block"
-                            style={{
-                              width: 72,
-                              height: 72,
-                              borderRadius: 4,
-                              border: isCover ? "2px solid var(--color-accent)" : "2px solid transparent",
-                            }}
-                            alt=""
-                          />
-                          {isCover && (
-                            <div
-                              className="absolute"
-                              style={{
-                                bottom: 2,
-                                left: 2,
-                                right: 2,
-                                background: "var(--color-accent)",
-                                color: "#fff",
-                                fontSize: 8,
-                                fontWeight: 700,
-                                letterSpacing: 0.8,
-                                textTransform: "uppercase",
-                                padding: "2px 0",
-                                borderRadius: 2,
-                                textAlign: "center",
-                              }}
-                            >
-                              Cover &#x2713;
-                            </div>
-                          )}
                           <button
-                            onClick={() => removePhoto(p.id)}
+                            onClick={() => toggleCover(p.id)}
+                            className="wm-cover-thumb cursor-pointer p-0 bg-transparent block"
+                            style={{
+                              border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+                              borderRadius: 4,
+                            }}
+                            aria-label={isCover ? "Cover photo" : "Set as cover"}
+                            aria-pressed={isCover}
+                          >
+                            <img
+                              src={p.src}
+                              className="object-cover block"
+                              style={{ width: 72, height: 72, borderRadius: 3 }}
+                              alt=""
+                            />
+                            {!isCover && (
+                              <span
+                                className="wm-cover-hover absolute flex items-center justify-center"
+                                style={{
+                                  top: 2,
+                                  left: 2,
+                                  right: 2,
+                                  bottom: 2,
+                                  background: "rgba(26,24,21,0.45)",
+                                  color: "#fff",
+                                  borderRadius: 2,
+                                  opacity: 0,
+                                  transition: "opacity 0.15s ease",
+                                  pointerEvents: "none",
+                                }}
+                              >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                  <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
                             className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
                             style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
                             aria-label="Remove photo"
@@ -736,24 +742,19 @@ Waymark
                             &#x00D7;
                           </button>
                         </div>
-                        <button
-                          onClick={() => toggleCover(p.id)}
-                          className="cursor-pointer font-body"
-                          style={{
-                            fontSize: 9,
-                            fontWeight: 700,
-                            letterSpacing: 0.5,
-                            padding: "3px 6px",
-                            borderRadius: 3,
-                            border: "none",
-                            background: isCover ? "var(--color-ink)" : "var(--color-accent)",
-                            color: "#fff",
-                            whiteSpace: "nowrap",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {isCover ? "\u2713 Cover" : "Set as cover"}
-                        </button>
+                        {isCover && (
+                          <div
+                            className="text-stone"
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              letterSpacing: 1.2,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Cover
+                          </div>
+                        )}
                       </div>
                     );
                   })}
