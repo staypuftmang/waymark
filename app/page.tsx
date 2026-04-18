@@ -143,15 +143,23 @@ export default function Page() {
     });
   }, []);
 
-  // ── Track journal_completed when reaching the preview page ──
+  // ── Scroll to top + track journal_completed when reaching the preview ──
   useEffect(() => {
-    if (step === 99 && photos.length > 0) {
-      track("journal_completed", {
-        visualStyle: vk,
-        layout: lo,
-        wordStyle: ws,
-        photoCount: photos.length,
-      });
+    if (step === 99) {
+      // Always scroll to the top of the preview when entering it —
+      // applies to Quick Create auto-navigation and Full Builder's
+      // Preview button alike.
+      if (typeof window !== "undefined") {
+        window.scrollTo(0, 0);
+      }
+      if (photos.length > 0) {
+        track("journal_completed", {
+          visualStyle: vk,
+          layout: lo,
+          wordStyle: ws,
+          photoCount: photos.length,
+        });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
