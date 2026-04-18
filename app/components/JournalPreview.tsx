@@ -215,19 +215,18 @@ export default function JournalPreview({
                 display: "block",
               }}
             />
-            {/* Gradient overlay + centered text stack: Title → Date → Subtitle */}
+            {/* Subtle full-photo darken + fully-centered text stack:
+                Title → Date → Subtitle */}
             <div
               style={{
                 position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                padding: "60px 32px 32px",
-                background:
-                  "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)",
+                inset: 0,
+                padding: "32px",
+                background: "rgba(0,0,0,0.2)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
+                justifyContent: "center",
                 textAlign: "center",
               }}
             >
