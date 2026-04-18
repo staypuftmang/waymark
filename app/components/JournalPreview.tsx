@@ -215,16 +215,20 @@ export default function JournalPreview({
                 display: "block",
               }}
             />
-            {/* Gradient overlay + text */}
+            {/* Gradient overlay + centered text stack: Title → Date → Subtitle */}
             <div
               style={{
                 position: "absolute",
                 bottom: 0,
                 left: 0,
                 right: 0,
-                padding: "60px 32px 28px",
+                padding: "60px 32px 32px",
                 background:
                   "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                textAlign: "center",
               }}
             >
               <div
@@ -236,14 +240,29 @@ export default function JournalPreview({
                   color: "#fff",
                   textShadow: "0 2px 8px rgba(0,0,0,0.5)",
                   lineHeight: 1.2,
-                  marginBottom: 6,
-                  maxWidth: "80%",
+                  marginBottom: 10,
+                  maxWidth: "85%",
                   letterSpacing: vk === "darkroom" ? 2 : vk === "brutalist" ? 1 : 0,
                   textTransform: vk === "brutalist" || vk === "darkroom" ? "uppercase" : "none",
                 }}
               >
                 {displayCoverTitle}
               </div>
+              {dateDisplay && (
+                <div
+                  style={{
+                    fontFamily: vs.fontCaption,
+                    fontSize: 11,
+                    color: "rgba(255,255,255,0.7)",
+                    textTransform: "uppercase",
+                    letterSpacing: 2,
+                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    marginBottom: coverSubtitle ? 8 : 0,
+                  }}
+                >
+                  {dateDisplay}
+                </div>
+              )}
               {coverSubtitle && (
                 <div
                   className="wm-cover-subtitle"
@@ -253,25 +272,10 @@ export default function JournalPreview({
                     fontSize: vk === "polaroid" ? 15 : vk === "brutalist" ? 13 : vk === "darkroom" ? 14 : 16,
                     color: "rgba(255,255,255,0.85)",
                     textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                    marginBottom: 8,
                     maxWidth: "80%",
                   }}
                 >
                   {coverSubtitle}
-                </div>
-              )}
-              {dateDisplay && (
-                <div
-                  style={{
-                    fontFamily: vs.fontCaption,
-                    fontSize: 11,
-                    color: "rgba(255,255,255,0.6)",
-                    textTransform: "uppercase",
-                    letterSpacing: 1.5,
-                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                  }}
-                >
-                  {dateDisplay}
                 </div>
               )}
             </div>

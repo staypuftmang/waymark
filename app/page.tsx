@@ -688,19 +688,61 @@ Waymark
                     {uploadErrors.join(". ")}
                   </div>
                 )}
-                <div className="flex gap-1 flex-wrap">
-                  {photos.map((p) => (
-                    <div key={p.id} className="relative">
-                      <img src={p.src} className="object-cover" style={{ width: 52, height: 52, borderRadius: 3 }} alt="" />
-                      <button
-                        onClick={() => removePhoto(p.id)}
-                        className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
-                        style={{ top: -3, right: -3, width: 16, height: 16, borderRadius: 2, fontSize: 9 }}
-                      >
-                        &#x00D7;
-                      </button>
-                    </div>
-                  ))}
+                <HelperText>Tap a photo to set it as your cover.</HelperText>
+                <div className="flex gap-2 flex-wrap" style={{ marginTop: 8 }}>
+                  {photos.map((p) => {
+                    const isCover = coverPhotoId === p.id;
+                    return (
+                      <div key={p.id} className="relative">
+                        <button
+                          onClick={() => toggleCover(p.id)}
+                          className="bg-transparent cursor-pointer p-0"
+                          style={{
+                            border: isCover ? "2px solid var(--color-accent)" : "2px solid transparent",
+                            borderRadius: 5,
+                            display: "block",
+                          }}
+                          aria-label={isCover ? "Remove as cover" : "Set as cover"}
+                        >
+                          <img
+                            src={p.src}
+                            className="object-cover block"
+                            style={{ width: 72, height: 72, borderRadius: 3 }}
+                            alt=""
+                          />
+                          {isCover && (
+                            <div
+                              className="absolute"
+                              style={{
+                                bottom: 2,
+                                left: 2,
+                                right: 2,
+                                background: "var(--color-accent)",
+                                color: "#fff",
+                                fontSize: 8,
+                                fontWeight: 700,
+                                letterSpacing: 0.8,
+                                textTransform: "uppercase",
+                                padding: "2px 0",
+                                borderRadius: 2,
+                                textAlign: "center",
+                              }}
+                            >
+                              Cover &#x2713;
+                            </div>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
+                          className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
+                          style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
+                          aria-label="Remove photo"
+                        >
+                          &#x00D7;
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

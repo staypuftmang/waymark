@@ -153,19 +153,21 @@ export default function PhotoStyleRow({
             <div
               className="absolute"
               style={{
-                top: 2,
+                bottom: 2,
                 left: 2,
+                right: 2,
                 background: "var(--color-accent)",
                 color: "#fff",
-                fontSize: 7,
+                fontSize: 8,
                 fontWeight: 700,
-                letterSpacing: 0.5,
+                letterSpacing: 0.8,
                 textTransform: "uppercase",
-                padding: "1px 4px",
+                padding: "2px 0",
                 borderRadius: 2,
+                textAlign: "center",
               }}
             >
-              Cover
+              Cover &#x2713;
             </div>
           )}
         </div>
@@ -175,14 +177,15 @@ export default function PhotoStyleRow({
           </div>
           <button
             onClick={() => onToggleCover(p.id)}
-            className="bg-transparent cursor-pointer font-body shrink-0"
+            className="cursor-pointer font-body shrink-0"
             style={{
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 600,
-              padding: "3px 8px",
+              padding: "4px 10px",
               borderRadius: 3,
-              border: isCover ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
-              color: isCover ? "var(--color-accent)" : "var(--color-stone)",
+              border: `1px solid var(--color-accent)`,
+              background: isCover ? "var(--color-accent)" : "transparent",
+              color: isCover ? "#fff" : "var(--color-accent)",
               whiteSpace: "nowrap",
               marginLeft: 8,
             }}
