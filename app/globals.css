@@ -101,6 +101,16 @@ body {
   color: var(--color-accent) !important;
 }
 
+/* Lightbox animations */
+@keyframes wmLightboxFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes wmLightboxPhoto {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ── Journal Layout Responsive Rules ── */
 /* These use pure CSS media queries so they apply immediately on mobile
    without waiting for JS hydration. */

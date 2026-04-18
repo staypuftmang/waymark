@@ -8,9 +8,10 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  onPhotoClick?: (photoId: number) => void;
 }
 
-export default function Magazine({ photos, vs, vk }: LayoutProps) {
+export default function Magazine({ photos, vs, vk, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
 
   const groups: Photo[][] = [];
@@ -33,7 +34,13 @@ export default function Magazine({ photos, vs, vk }: LayoutProps) {
             <div>
               <img
                 src={gr[0].src}
-                style={{ width: "100%", borderRadius: br, display: "block" }}
+                onClick={onPhotoClick ? () => onPhotoClick(gr[0].id) : undefined}
+                style={{
+                  width: "100%",
+                  borderRadius: br,
+                  display: "block",
+                  cursor: onPhotoClick ? "pointer" : "default",
+                }}
                 alt=""
               />
               <PhotoCaption photo={gr[0]} vs={vs} vk={vk} />
@@ -45,10 +52,12 @@ export default function Magazine({ photos, vs, vk }: LayoutProps) {
                   <img
                     src={p.src}
                     className="wm-pair-img"
+                    onClick={onPhotoClick ? () => onPhotoClick(p.id) : undefined}
                     style={{
                       width: "100%",
                       borderRadius: br,
                       display: "block",
+                      cursor: onPhotoClick ? "pointer" : "default",
                     }}
                     alt=""
                   />

@@ -9,11 +9,12 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  onPhotoClick?: (photoId: number) => void;
 }
 
 const ROTATIONS = [-2.5, 1.8, -1.2, 2.8, -0.8, 1.5];
 
-export default function Stacked({ photos, vs, vk }: LayoutProps) {
+export default function Stacked({ photos, vs, vk, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -40,7 +41,13 @@ export default function Stacked({ photos, vs, vk }: LayoutProps) {
           >
             <img
               src={p.src}
-              style={{ width: "100%", borderRadius: vk === "polaroid" ? 0 : 3, display: "block" }}
+              onClick={onPhotoClick ? () => onPhotoClick(p.id) : undefined}
+              style={{
+                width: "100%",
+                borderRadius: vk === "polaroid" ? 0 : 3,
+                display: "block",
+                cursor: onPhotoClick ? "pointer" : "default",
+              }}
               alt=""
             />
             <PhotoCaption photo={p} vs={vs} vk={vk} />

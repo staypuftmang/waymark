@@ -8,9 +8,10 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  onPhotoClick?: (photoId: number) => void;
 }
 
-export default function Classic({ photos, vs, vk }: LayoutProps) {
+export default function Classic({ photos, vs, vk, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
   return (
     <div>
@@ -19,7 +20,13 @@ export default function Classic({ photos, vs, vk }: LayoutProps) {
           <div className="wm-classic-entry" style={{ marginBottom: 40 }}>
             <img
               src={p.src}
-              style={{ width: "100%", borderRadius: br, display: "block" }}
+              onClick={onPhotoClick ? () => onPhotoClick(p.id) : undefined}
+              style={{
+                width: "100%",
+                borderRadius: br,
+                display: "block",
+                cursor: onPhotoClick ? "pointer" : "default",
+              }}
               alt=""
             />
             <PhotoCaption photo={p} vs={vs} vk={vk} />

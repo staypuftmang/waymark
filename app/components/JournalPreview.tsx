@@ -7,6 +7,7 @@ import { VS, LO } from "@/app/lib/constants";
 import { exportPDF, exportImage } from "@/app/lib/export";
 import { LayoutMap } from "./layouts";
 import RefinePanel from "./RefinePanel";
+import Lightbox from "./Lightbox";
 
 interface JournalPreviewProps {
   tripTitle: string;
@@ -53,6 +54,12 @@ export default function JournalPreview({
     track("layout_selected", { layout: k });
   };
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  const openLightbox = (photoId: number) => {
+    const idx = photos.findIndex((p) => p.id === photoId);
+    if (idx >= 0) setLightboxIndex(idx);
+  };
   const [exporting, setExporting] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -359,7 +366,7 @@ export default function JournalPreview({
         }}
       >
 
-        <LayoutComponent photos={photos} vs={vs} vk={vk} />
+        <LayoutComponent photos={photos} vs={vs} vk={vk} onPhotoClick={openLightbox} />
 
         <div
           style={{
@@ -401,6 +408,15 @@ export default function JournalPreview({
       </div>
 
 {/* click-outside overlay removed — dropdown closes via onBlur */}
+
+      {/* Lightbox — only rendered in the final journal preview */}
+      {lightboxIndex !== null && (
+        <Lightbox
+          photos={photos}
+          startIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
     </div>
   );
 }

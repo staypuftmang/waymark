@@ -11,6 +11,7 @@ export interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  onPhotoClick?: (photoId: number) => void;
 }
 
 export const LayoutMap: Record<LayoutKey, ComponentType<LayoutProps>> = {
