@@ -37,6 +37,11 @@ export interface SavedState {
     aiNotes: string;
     aiParagraph: string;
   }>;
+  // Cover photo (all optional — fall back if missing from older saves)
+  coverPhotoId?: number | null;
+  coverTitle?: string;
+  coverSubtitle?: string;
+  coverTitleEdited?: boolean;
 }
 
 export async function saveState(state: SavedState): Promise<void> {

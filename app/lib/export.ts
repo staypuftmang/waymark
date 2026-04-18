@@ -227,18 +227,14 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
       continue;
     }
 
-    // Step 2: No entry fits. Check if there's an oversize entry starting on
-    // this page that we need to split.
-    const oversizeStartingHere = oversizeEntries.find(
-      (e) => e.top >= cursor && e.top < pageLimit
-    );
+    // Step 2: An oversize entry is ALREADY IN PROGRESS (started on a previous
+    // page). We have to keep splitting it. Find the largest soft break inside
+    // it that fits on the current page.
     const oversizeContinuingHere = oversizeEntries.find(
       (e) => e.top < cursor && e.bottom > cursor
     );
-    const activeOversize = oversizeStartingHere || oversizeContinuingHere;
 
-    if (activeOversize) {
-      // Find the largest soft break INSIDE this oversize entry that fits
+    if (oversizeContinuingHere) {
       let bestSoft = -1;
       for (let i = canvasSoftBreaks.length - 1; i >= 0; i--) {
         const b = canvasSoftBreaks[i];
@@ -254,11 +250,16 @@ export async function exportPDF(elementId: string, title: string, bgColor: strin
         continue;
       }
 
-      // No soft break fits inside the oversize entry — fall back to hard cut
+      // No soft break fits — fall back to hard cut to make progress
       pages.push({ start: cursor, end: pageLimit });
       cursor = pageLimit;
       continue;
     }
+
+    // Step 2b: An oversize entry STARTS on this page but cursor isn't at its
+    // top yet (we have previous content above). Push the entry to a fresh
+    // page where it has the full page to work with — we'll split it there.
+    // (Falls through to Step 3 below.)
 
     // Step 3: No fitting entry, no oversize entry on this page.
     // Skip to the next entry's top (leaving the rest of this page blank).

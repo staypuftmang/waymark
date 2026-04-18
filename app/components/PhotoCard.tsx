@@ -19,6 +19,8 @@ interface PhotoCardProps {
   brief: string;
   wordStyle: WordStyleKey;
   dateDisplay: string;
+  isCover: boolean;
+  onToggleCover: (id: number) => void;
 }
 
 export default function PhotoCard({
@@ -32,6 +34,8 @@ export default function PhotoCard({
   brief,
   wordStyle: ws,
   dateDisplay: dd,
+  isCover,
+  onToggleCover,
 }: PhotoCardProps) {
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
@@ -99,12 +103,33 @@ export default function PhotoCard({
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="flex gap-2.5">
         <div className="flex flex-col items-center gap-1 shrink-0">
-          <img
-            src={p.src}
-            className="object-cover"
-            style={{ width: 80, height: 80, borderRadius: 3 }}
-            alt=""
-          />
+          <div className="relative">
+            <img
+              src={p.src}
+              className="object-cover"
+              style={{ width: 80, height: 80, borderRadius: 3 }}
+              alt=""
+            />
+            {isCover && (
+              <div
+                className="absolute"
+                style={{
+                  top: 3,
+                  left: 3,
+                  background: "var(--color-accent)",
+                  color: "#fff",
+                  fontSize: 8,
+                  fontWeight: 700,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                  padding: "2px 5px",
+                  borderRadius: 2,
+                }}
+              >
+                Cover
+              </div>
+            )}
+          </div>
           <div className="flex gap-0.5">
             {idx > 0 && (
               <button style={iconBtn} onClick={() => mv(p.id, -1)}>
@@ -120,6 +145,23 @@ export default function PhotoCard({
               &#x00D7;
             </button>
           </div>
+          <button
+            onClick={() => onToggleCover(p.id)}
+            className="bg-transparent cursor-pointer font-body"
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              padding: "3px 6px",
+              borderRadius: 3,
+              border: isCover ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
+              color: isCover ? "var(--color-accent)" : "var(--color-stone)",
+              whiteSpace: "nowrap",
+              width: 80,
+              textAlign: "center",
+            }}
+          >
+            {isCover ? "Cover \u2713" : "Set as cover"}
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col gap-1">

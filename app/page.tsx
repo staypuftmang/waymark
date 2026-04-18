@@ -15,6 +15,7 @@ import StylePreview from "@/app/components/StylePreview";
 import RewriteAll from "@/app/components/RewriteAll";
 import JournalPreview from "@/app/components/JournalPreview";
 import HelperText from "@/app/components/HelperText";
+import CoverEditor from "@/app/components/CoverEditor";
 
 /* ── Shared inline styles ── */
 const iStyle: React.CSSProperties = {
@@ -113,6 +114,11 @@ export default function Page() {
   const [uploadProgress, setUploadProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [showPhotoLimitWarning, setShowPhotoLimitWarning] = useState<{ files: File[]; count: number } | null>(null);
+  // Cover photo state
+  const [coverPhotoId, setCoverPhotoId] = useState<number | null>(null);
+  const [coverTitle, setCoverTitle] = useState<string>("");
+  const [coverSubtitle, setCoverSubtitle] = useState<string>("");
+  const [coverTitleEdited, setCoverTitleEdited] = useState(false);
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
@@ -166,13 +172,17 @@ export default function Page() {
         wordStyle: ws,
         layoutKey: lo,
         photos,
+        coverPhotoId,
+        coverTitle,
+        coverSubtitle,
+        coverTitleEdited,
       };
       saveState(state);
     }, 2000);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, lo, photos]);
+  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
 
   const resumeJournal = () => {
     if (!savedJournal) return;
@@ -186,6 +196,10 @@ export default function Page() {
     setWs(savedJournal.wordStyle as WordStyleKey);
     setLo(savedJournal.layoutKey as LayoutKey);
     setPhotos(savedJournal.photos);
+    setCoverPhotoId(savedJournal.coverPhotoId ?? null);
+    setCoverTitle(savedJournal.coverTitle ?? "");
+    setCoverSubtitle(savedJournal.coverSubtitle ?? "");
+    setCoverTitleEdited(savedJournal.coverTitleEdited ?? false);
     setShowResumePrompt(false);
     setSavedJournal(null);
   };
@@ -268,7 +282,27 @@ export default function Page() {
   const updatePhoto = (id: number, field: string, value: string) =>
     setPhotos((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
 
-  const removePhoto = (id: number) => setPhotos((p) => p.filter((x) => x.id !== id));
+  const removePhoto = (id: number) => {
+    setPhotos((p) => p.filter((x) => x.id !== id));
+    // Clear cover selection if the cover photo is deleted (keep title/subtitle)
+    if (coverPhotoId === id) setCoverPhotoId(null);
+  };
+
+  const toggleCover = (id: number) => {
+    setCoverPhotoId((current) => (current === id ? null : id));
+  };
+
+  // Auto-sync coverTitle ← tripTitle until user manually edits coverTitle
+  useEffect(() => {
+    if (!coverTitleEdited) {
+      setCoverTitle(tripTitle);
+    }
+  }, [tripTitle, coverTitleEdited]);
+
+  const updateCoverTitle = (value: string) => {
+    setCoverTitle(value);
+    setCoverTitleEdited(true);
+  };
 
   const movePhoto = (id: number, dir: number) =>
     setPhotos((p) => {
@@ -288,6 +322,10 @@ export default function Page() {
     setTripBrief("");
     setStartDate(null);
     setEndDate(null);
+    setCoverPhotoId(null);
+    setCoverTitle("");
+    setCoverSubtitle("");
+    setCoverTitleEdited(false);
   };
 
   const reset = () => {
@@ -743,6 +781,16 @@ Waymark
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
 
+            <CoverEditor
+              photos={photos}
+              coverPhotoId={coverPhotoId}
+              coverTitle={coverTitle}
+              coverSubtitle={coverSubtitle}
+              onRemoveCover={() => setCoverPhotoId(null)}
+              onUpdateCoverTitle={updateCoverTitle}
+              onUpdateCoverSubtitle={setCoverSubtitle}
+            />
+
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
               <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
@@ -750,7 +798,7 @@ Waymark
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
               {photos.map((p) => (
-                <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} />
+                <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} isCover={coverPhotoId === p.id} onToggleCover={toggleCover} />
               ))}
             </div>
 
@@ -844,10 +892,20 @@ Waymark
           </div>
 
           {photos.length > 0 && (
-            <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12 }}>
+            <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12, marginBottom: 12 }}>
               {photos.length} photo{photos.length > 1 ? "s" : ""} added
             </div>
           )}
+
+          <CoverEditor
+            photos={photos}
+            coverPhotoId={coverPhotoId}
+            coverTitle={coverTitle}
+            coverSubtitle={coverSubtitle}
+            onRemoveCover={() => setCoverPhotoId(null)}
+            onUpdateCoverTitle={updateCoverTitle}
+            onUpdateCoverSubtitle={setCoverSubtitle}
+          />
 
           <div className="grid gap-2.5" style={{ marginTop: 12 }}>
             {photos.map((p, i) => (
@@ -863,6 +921,8 @@ Waymark
                 brief={tripBrief}
                 wordStyle={ws}
                 dateDisplay={dateDisplay}
+                isCover={coverPhotoId === p.id}
+                onToggleCover={toggleCover}
               />
             ))}
           </div>
@@ -953,6 +1013,16 @@ Waymark
             ))}
           </div>
 
+          <CoverEditor
+            photos={photos}
+            coverPhotoId={coverPhotoId}
+            coverTitle={coverTitle}
+            coverSubtitle={coverSubtitle}
+            onRemoveCover={() => setCoverPhotoId(null)}
+            onUpdateCoverTitle={updateCoverTitle}
+            onUpdateCoverSubtitle={setCoverSubtitle}
+          />
+
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
             <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
@@ -962,7 +1032,7 @@ Waymark
 
           <div className="grid gap-2" style={{ marginBottom: 8 }}>
             {photos.map((p) => (
-              <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} />
+              <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} isCover={coverPhotoId === p.id} onToggleCover={toggleCover} />
             ))}
           </div>
 
@@ -996,6 +1066,9 @@ Waymark
           onLogoClick={reset}
           setVisualStyleKey={setVk}
           setLayoutKey={setLo}
+          coverPhotoId={coverPhotoId}
+          coverTitle={coverTitle}
+          coverSubtitle={coverSubtitle}
         />
       )}
     </div>

@@ -116,6 +116,14 @@ body {
     gap: 28px;
   }
 
+  /* Cover text scales down on mobile */
+  .wm-cover-title {
+    font-size: 24px !important;
+  }
+  .wm-cover-subtitle {
+    font-size: 14px !important;
+  }
+
   .wm-classic-entry {
     margin-bottom: 20px !important;
   }

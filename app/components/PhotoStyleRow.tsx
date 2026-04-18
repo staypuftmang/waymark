@@ -13,6 +13,8 @@ interface PhotoStyleRowProps {
   brief: string;
   wordStyle: WordStyleKey;
   dateDisplay: string;
+  isCover: boolean;
+  onToggleCover: (id: number) => void;
 }
 
 export default function PhotoStyleRow({
@@ -22,6 +24,8 @@ export default function PhotoStyleRow({
   brief,
   wordStyle: ws,
   dateDisplay: dd,
+  isCover,
+  onToggleCover,
 }: PhotoStyleRowProps) {
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
@@ -138,16 +142,53 @@ export default function PhotoStyleRow({
   return (
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="flex gap-2 items-start mb-2">
-        <img
-          src={p.src}
-          className="object-cover shrink-0"
-          style={{ width: 48, height: 48, borderRadius: 3 }}
-          alt=""
-        />
-        <div className="flex-1 flex items-center" style={{ minHeight: 48 }}>
+        <div className="relative shrink-0">
+          <img
+            src={p.src}
+            className="object-cover"
+            style={{ width: 48, height: 48, borderRadius: 3 }}
+            alt=""
+          />
+          {isCover && (
+            <div
+              className="absolute"
+              style={{
+                top: 2,
+                left: 2,
+                background: "var(--color-accent)",
+                color: "#fff",
+                fontSize: 7,
+                fontWeight: 700,
+                letterSpacing: 0.5,
+                textTransform: "uppercase",
+                padding: "1px 4px",
+                borderRadius: 2,
+              }}
+            >
+              Cover
+            </div>
+          )}
+        </div>
+        <div className="flex-1 flex items-center justify-between" style={{ minHeight: 48 }}>
           <div className="text-stone font-medium" style={{ fontSize: 12 }}>
             {cap || notes || "No content"}
           </div>
+          <button
+            onClick={() => onToggleCover(p.id)}
+            className="bg-transparent cursor-pointer font-body shrink-0"
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "3px 8px",
+              borderRadius: 3,
+              border: isCover ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
+              color: isCover ? "var(--color-accent)" : "var(--color-stone)",
+              whiteSpace: "nowrap",
+              marginLeft: 8,
+            }}
+          >
+            {isCover ? "Cover \u2713" : "Set as cover"}
+          </button>
         </div>
       </div>
 

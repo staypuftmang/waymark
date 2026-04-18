@@ -19,6 +19,9 @@ interface JournalPreviewProps {
   onLogoClick: () => void;
   setVisualStyleKey: (k: VisualStyleKey) => void;
   setLayoutKey: (k: LayoutKey) => void;
+  coverPhotoId: number | null;
+  coverTitle: string;
+  coverSubtitle: string;
 }
 
 export default function JournalPreview({
@@ -32,9 +35,14 @@ export default function JournalPreview({
   onLogoClick,
   setVisualStyleKey: setVkProp,
   setLayoutKey: setLoProp,
+  coverPhotoId,
+  coverTitle,
+  coverSubtitle,
 }: JournalPreviewProps) {
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
+  const coverPhoto = coverPhotoId !== null ? photos.find((p) => p.id === coverPhotoId) : null;
+  const displayCoverTitle = coverTitle || tripTitle;
 
   const setVk = (k: VisualStyleKey) => {
     setVkProp(k);
@@ -184,56 +192,160 @@ export default function JournalPreview({
       </div>
 
       {/* Cover section */}
-      <div
-        data-export-cover
-        className="flex flex-col items-center text-center"
-        style={{ padding: "60px 24px 40px" }}
-      >
-        {dateDisplay && (
+      {coverPhoto ? (
+        <div data-export-cover style={{ padding: "24px 24px 0" }}>
           <div
             style={{
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: 3,
-              opacity: 0.35,
-              marginBottom: 14,
+              position: "relative",
+              width: "100%",
+              maxWidth: 960,
+              margin: "0 auto",
+              aspectRatio: "16 / 9",
+              borderRadius: vs.bg === "#0F0F0F" || vk === "brutalist" ? 0 : 5,
+              overflow: "hidden",
             }}
           >
-            {dateDisplay}
+            <img
+              src={coverPhoto.src}
+              alt=""
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+            {/* Gradient overlay + text */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                padding: "60px 32px 28px",
+                background:
+                  "linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)",
+              }}
+            >
+              <div
+                className="wm-cover-title"
+                style={{
+                  fontFamily: vs.fontTitle,
+                  fontSize: vk === "polaroid" ? 36 : vk === "brutalist" ? 24 : vk === "darkroom" ? 28 : vk === "botanical" ? 30 : 32,
+                  fontWeight: 300,
+                  color: "#fff",
+                  textShadow: "0 2px 8px rgba(0,0,0,0.5)",
+                  lineHeight: 1.2,
+                  marginBottom: 6,
+                  maxWidth: "80%",
+                  letterSpacing: vk === "darkroom" ? 2 : vk === "brutalist" ? 1 : 0,
+                  textTransform: vk === "brutalist" || vk === "darkroom" ? "uppercase" : "none",
+                }}
+              >
+                {displayCoverTitle}
+              </div>
+              {coverSubtitle && (
+                <div
+                  className="wm-cover-subtitle"
+                  style={{
+                    fontFamily: vs.fontCaption,
+                    fontStyle: "italic",
+                    fontSize: vk === "polaroid" ? 15 : vk === "brutalist" ? 13 : vk === "darkroom" ? 14 : 16,
+                    color: "rgba(255,255,255,0.85)",
+                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    marginBottom: 8,
+                    maxWidth: "80%",
+                  }}
+                >
+                  {coverSubtitle}
+                </div>
+              )}
+              {dateDisplay && (
+                <div
+                  style={{
+                    fontFamily: vs.fontCaption,
+                    fontSize: 11,
+                    color: "rgba(255,255,255,0.6)",
+                    textTransform: "uppercase",
+                    letterSpacing: 1.5,
+                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  {dateDisplay}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-        <h1
-          style={{
-            fontFamily: vs.fontTitle,
-            fontSize: 38,
-            fontWeight: 700,
-            lineHeight: 1.1,
-            maxWidth: 520,
-            textTransform: vk === "brutalist" || vk === "darkroom" ? "uppercase" : "none",
-          }}
-        >
-          {tripTitle}
-        </h1>
+          {tripBrief && (
+            <div
+              style={{
+                fontFamily: vs.fontBody,
+                fontSize: 16,
+                lineHeight: 1.8,
+                maxWidth: 540,
+                margin: "32px auto 0",
+                opacity: 0.8,
+                fontStyle: vk === "editorial" ? "italic" : "normal",
+                whiteSpace: "pre-line",
+                textAlign: "center",
+              }}
+            >
+              {tripBrief}
+            </div>
+          )}
+        </div>
+      ) : (
         <div
-          style={{ width: 28, height: 1.5, background: vs.accent, margin: "22px auto 0" }}
-        />
-        {tripBrief && (
-          <div
+          data-export-cover
+          className="flex flex-col items-center text-center"
+          style={{ padding: "60px 24px 40px" }}
+        >
+          {dateDisplay && (
+            <div
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: 3,
+                opacity: 0.35,
+                marginBottom: 14,
+              }}
+            >
+              {dateDisplay}
+            </div>
+          )}
+          <h1
             style={{
-              fontFamily: vs.fontBody,
-              fontSize: 16,
-              lineHeight: 1.8,
-              maxWidth: 540,
-              marginTop: 22,
-              opacity: 0.8,
-              fontStyle: vk === "editorial" ? "italic" : "normal",
-              whiteSpace: "pre-line",
+              fontFamily: vs.fontTitle,
+              fontSize: 38,
+              fontWeight: 700,
+              lineHeight: 1.1,
+              maxWidth: 520,
+              textTransform: vk === "brutalist" || vk === "darkroom" ? "uppercase" : "none",
             }}
           >
-            {tripBrief}
-          </div>
-        )}
-      </div>
+            {tripTitle}
+          </h1>
+          <div
+            style={{ width: 28, height: 1.5, background: vs.accent, margin: "22px auto 0" }}
+          />
+          {tripBrief && (
+            <div
+              style={{
+                fontFamily: vs.fontBody,
+                fontSize: 16,
+                lineHeight: 1.8,
+                maxWidth: 540,
+                marginTop: 22,
+                opacity: 0.8,
+                fontStyle: vk === "editorial" ? "italic" : "normal",
+                whiteSpace: "pre-line",
+              }}
+            >
+              {tripBrief}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Body */}
       <div
