@@ -91,6 +91,16 @@ body {
   opacity: 1 !important;
 }
 
+/* Subtle "Set as cover" / "Cover ✓" text link — stone by default,
+   accent on hover/focus. Used on PhotoCard and PhotoStyleRow. */
+.wm-cover-link {
+  transition: color 0.15s ease;
+}
+.wm-cover-link:hover,
+.wm-cover-link:focus-visible {
+  color: var(--color-accent) !important;
+}
+
 /* ── Journal Layout Responsive Rules ── */
 /* These use pure CSS media queries so they apply immediately on mobile
    without waiting for JS hydration. */

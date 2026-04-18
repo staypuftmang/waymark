@@ -142,53 +142,35 @@ export default function PhotoStyleRow({
   return (
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="flex gap-2 items-start mb-2">
-        <div className="relative shrink-0">
-          <img
-            src={p.src}
-            className="object-cover"
-            style={{ width: 48, height: 48, borderRadius: 3 }}
-            alt=""
-          />
-          {isCover && (
-            <div
-              className="absolute"
-              style={{
-                bottom: 2,
-                left: 2,
-                right: 2,
-                background: "var(--color-accent)",
-                color: "#fff",
-                fontSize: 8,
-                fontWeight: 700,
-                letterSpacing: 0.8,
-                textTransform: "uppercase",
-                padding: "2px 0",
-                borderRadius: 2,
-                textAlign: "center",
-              }}
-            >
-              Cover &#x2713;
-            </div>
-          )}
-        </div>
+        <img
+          src={p.src}
+          className="object-cover shrink-0"
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 3,
+            border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+          }}
+          alt=""
+        />
         <div className="flex-1 flex items-center justify-between" style={{ minHeight: 48 }}>
           <div className="text-stone font-medium" style={{ fontSize: 12 }}>
             {cap || notes || "No content"}
           </div>
           <button
             onClick={() => onToggleCover(p.id)}
-            className="cursor-pointer font-body shrink-0"
+            className="wm-cover-link cursor-pointer font-body bg-transparent p-0 shrink-0"
             style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "5px 12px",
-              borderRadius: 3,
+              fontSize: isCover ? 10 : 12,
+              fontWeight: isCover ? 600 : 500,
               border: "none",
-              background: isCover ? "var(--color-ink)" : "var(--color-accent)",
-              color: "#fff",
+              color: "var(--color-stone)",
+              letterSpacing: isCover ? 1.2 : 0,
+              textTransform: isCover ? "uppercase" : "none",
               whiteSpace: "nowrap",
               marginLeft: 8,
             }}
+            aria-pressed={isCover}
           >
             {isCover ? "Cover \u2713" : "Set as cover"}
           </button>

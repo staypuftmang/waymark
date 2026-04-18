@@ -752,7 +752,7 @@ Waymark
                               textTransform: "uppercase",
                             }}
                           >
-                            Cover
+                            Cover &#x2713;
                           </div>
                         )}
                       </div>

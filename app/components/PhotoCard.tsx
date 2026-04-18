@@ -103,33 +103,17 @@ export default function PhotoCard({
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="flex gap-2.5">
         <div className="flex flex-col items-center gap-1 shrink-0">
-          <div className="relative">
-            <img
-              src={p.src}
-              className="object-cover"
-              style={{ width: 80, height: 80, borderRadius: 3 }}
-              alt=""
-            />
-            {isCover && (
-              <div
-                className="absolute"
-                style={{
-                  top: 3,
-                  left: 3,
-                  background: "var(--color-accent)",
-                  color: "#fff",
-                  fontSize: 8,
-                  fontWeight: 700,
-                  letterSpacing: 1,
-                  textTransform: "uppercase",
-                  padding: "2px 5px",
-                  borderRadius: 2,
-                }}
-              >
-                Cover
-              </div>
-            )}
-          </div>
+          <img
+            src={p.src}
+            className="object-cover"
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: 3,
+              border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+            }}
+            alt=""
+          />
           <div className="flex gap-0.5">
             {idx > 0 && (
               <button style={iconBtn} onClick={() => mv(p.id, -1)}>
@@ -147,23 +131,19 @@ export default function PhotoCard({
           </div>
           <button
             onClick={() => onToggleCover(p.id)}
-            className="cursor-pointer font-body"
+            className="wm-cover-link cursor-pointer font-body bg-transparent p-0"
             style={{
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: 0.5,
-              padding: "3px 6px",
-              borderRadius: 3,
+              fontSize: isCover ? 10 : 12,
+              fontWeight: isCover ? 600 : 500,
               border: "none",
-              background: isCover ? "var(--color-ink)" : "var(--color-accent)",
-              color: "#fff",
+              color: "var(--color-stone)",
+              letterSpacing: isCover ? 1.2 : 0,
+              textTransform: isCover ? "uppercase" : "none",
               whiteSpace: "nowrap",
-              width: 80,
-              textAlign: "center",
-              textTransform: "uppercase",
             }}
+            aria-pressed={isCover}
           >
-            {isCover ? "\u2713 Cover" : "Set as cover"}
+            {isCover ? "Cover \u2713" : "Set as cover"}
           </button>
         </div>
 
