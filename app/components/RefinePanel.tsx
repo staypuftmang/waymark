@@ -41,16 +41,26 @@ export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: Refine
   const pill = (key: string, selected: boolean, onClick: () => void, label: string) => (
     <button
       key={key}
-      onClick={onClick}
+      type="button"
+      onClick={(e) => {
+        // Prevent the clicked button from keeping focus — otherwise the
+        // browser focus ring can persist on a previously-selected pill
+        // and visually mimic the selected border (Safari/iOS especially).
+        (e.currentTarget as HTMLButtonElement).blur();
+        onClick();
+      }}
       className="font-body cursor-pointer"
       style={{
         padding: "4px 12px",
         borderRadius: 3,
-        border: selected ? `1.5px solid ${vs.accent}` : `1px solid ${vs.fg}22`,
-        background: selected ? `${vs.accent}14` : "transparent",
+        borderWidth: "1.5px",
+        borderStyle: "solid",
+        borderColor: selected ? vs.accent : "transparent",
+        background: selected ? `${vs.accent}14` : `${vs.fg}0A`,
         color: vs.fg,
         fontSize: 11,
         fontWeight: selected ? 700 : 400,
+        outline: "none",
       }}
     >
       {label}
