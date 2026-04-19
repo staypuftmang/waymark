@@ -166,7 +166,11 @@ export async function exportPDF(
     // doesn't fit the remaining space. Oversize units are scaled to one page.
     const place = (
       unit: { dataUrl: string; width: number; height: number },
-      opts: { forceNewPage?: boolean; extraBottom?: number } = {}
+      opts: {
+        forceNewPage?: boolean;
+        extraBottom?: number;
+        lowerThirdOnNewPage?: boolean;
+      } = {}
     ) => {
       const bottomReserve = opts.extraBottom ?? 0;
       let w = unit.width;
@@ -179,13 +183,19 @@ export async function exportPDF(
       }
 
       const spaceLeft = pdfHeight - margin - yCursor - bottomReserve;
-      if (opts.forceNewPage || h > spaceLeft) {
-        primeNewPage();
-      }
+      const needsNewPage = !!opts.forceNewPage || h > spaceLeft;
+      if (needsNewPage) primeNewPage();
 
       const x = margin + (contentWidth - w) / 2;
-      pdf.addImage(unit.dataUrl, "JPEG", x, yCursor, w, h);
-      yCursor += h + entryGap;
+      let y = yCursor;
+      if (needsNewPage && opts.lowerThirdOnNewPage) {
+        // Center vertically in the lower third of the page (middle at 5/6).
+        y = pdfHeight * (5 / 6) - h / 2;
+        y = Math.min(y, pdfHeight - margin - bottomReserve - h);
+        y = Math.max(y, margin);
+      }
+      pdf.addImage(unit.dataUrl, "JPEG", x, y, w, h);
+      yCursor = y + h + entryGap;
     };
 
     // Cover: full PDF width at the top of page 1. Occupies roughly the top
@@ -206,10 +216,15 @@ export async function exportPDF(
     }
 
     if (footer) {
-      // Reserve extra bottom margin so the "Made with Waymark" line never
-      // sits flush against the page edge.
+      // Add a 40pt gap above the footer on top of the normal 20pt entryGap,
+      // so there's ~60pt of breathing room between the last entry/divider
+      // and "Made with Waymark". Reserve 60pt at the page bottom so the
+      // text always sits well within the printable area. If the footer
+      // doesn't fit on the current page, it gets its own final page and
+      // we center it vertically in the lower third (colophon style).
       const footerUnit = await captureUnit(footer, bgColor, contentWidth);
-      place(footerUnit, { extraBottom: 28 });
+      yCursor += 40;
+      place(footerUnit, { extraBottom: 60, lowerThirdOnNewPage: true });
     }
 
     pdf.save(`Waymark - ${sanitizeFilename(title)}.pdf`);
