@@ -166,36 +166,22 @@ export async function exportPDF(
     // doesn't fit the remaining space. Oversize units are scaled to one page.
     const place = (
       unit: { dataUrl: string; width: number; height: number },
-      opts: {
-        forceNewPage?: boolean;
-        extraBottom?: number;
-        lowerThirdOnNewPage?: boolean;
-      } = {}
+      opts: { forceNewPage?: boolean } = {}
     ) => {
-      const bottomReserve = opts.extraBottom ?? 0;
       let w = unit.width;
       let h = unit.height;
-      const maxH = contentHeight - bottomReserve;
-      if (h > maxH) {
-        const s = maxH / h;
-        h = maxH;
+      if (h > contentHeight) {
+        const s = contentHeight / h;
+        h = contentHeight;
         w *= s;
       }
 
-      const spaceLeft = pdfHeight - margin - yCursor - bottomReserve;
-      const needsNewPage = !!opts.forceNewPage || h > spaceLeft;
-      if (needsNewPage) primeNewPage();
+      const spaceLeft = pdfHeight - margin - yCursor;
+      if (opts.forceNewPage || h > spaceLeft) primeNewPage();
 
       const x = margin + (contentWidth - w) / 2;
-      let y = yCursor;
-      if (needsNewPage && opts.lowerThirdOnNewPage) {
-        // Center vertically in the lower third of the page (middle at 5/6).
-        y = pdfHeight * (5 / 6) - h / 2;
-        y = Math.min(y, pdfHeight - margin - bottomReserve - h);
-        y = Math.max(y, margin);
-      }
-      pdf.addImage(unit.dataUrl, "JPEG", x, y, w, h);
-      yCursor = y + h + entryGap;
+      pdf.addImage(unit.dataUrl, "JPEG", x, yCursor, w, h);
+      yCursor += h + entryGap;
     };
 
     // Cover: full PDF width at the top of page 1. Occupies roughly the top
@@ -216,15 +202,27 @@ export async function exportPDF(
     }
 
     if (footer) {
-      // Add a 40pt gap above the footer on top of the normal 20pt entryGap,
-      // so there's ~60pt of breathing room between the last entry/divider
-      // and "Made with Waymark". Reserve 60pt at the page bottom so the
-      // text always sits well within the printable area. If the footer
-      // doesn't fit on the current page, it gets its own final page and
-      // we center it vertically in the lower third (colophon style).
+      // Footer is all-or-nothing: either the full "— fin —" + "Made with
+      // Waymark" block fits entirely on the current page, or it gets its
+      // own final page with the block centered vertically. It never sits
+      // partially below the printable area.
       const footerUnit = await captureUnit(footer, bgColor, contentWidth);
-      yCursor += 40;
-      place(footerUnit, { extraBottom: 60, lowerThirdOnNewPage: true });
+      let fw = footerUnit.width;
+      let fh = footerUnit.height;
+      if (fh > contentHeight) {
+        const s = contentHeight / fh;
+        fh = contentHeight;
+        fw *= s;
+      }
+
+      const fitsOnCurrentPage = yCursor + fh <= pdfHeight - margin;
+      if (!fitsOnCurrentPage) primeNewPage();
+
+      const fx = margin + (contentWidth - fw) / 2;
+      const fy = fitsOnCurrentPage
+        ? yCursor
+        : margin + (contentHeight - fh) / 2;
+      pdf.addImage(footerUnit.dataUrl, "JPEG", fx, fy, fw, fh);
     }
 
     pdf.save(`Waymark - ${sanitizeFilename(title)}.pdf`);
