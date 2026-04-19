@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Photo, WordStyleKey } from "@/app/lib/types";
 import { aiCall } from "@/app/lib/ai";
 import { rewriteCaptionPrompt, rewriteNotesPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
@@ -42,6 +42,16 @@ export default function PhotoCard({
   const [loadingParagraph, setLP] = useState(false);
   const [showParagraph, setSP] = useState(!!p.paragraph || !!p.aiParagraph);
 
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const paraRef = useRef<HTMLTextAreaElement>(null);
+  const autosize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useEffect(() => { autosize(notesRef.current); }, [p.notes]);
+  useEffect(() => { autosize(paraRef.current); }, [p.paragraph, showParagraph]);
+
   const rewrite = async (field: string, aiField: string, setLoading: (v: boolean) => void) => {
     const raw = (p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string);
     if (!raw) return;
@@ -68,6 +78,7 @@ export default function PhotoCard({
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
+    minWidth: 0,
     padding: "11px 14px",
     border: "1px solid var(--color-border)",
     borderRadius: 5,
@@ -82,7 +93,9 @@ export default function PhotoCard({
   const textareaStyle: React.CSSProperties = {
     ...inputStyle,
     resize: "none",
-    minHeight: 38,
+    minHeight: 44,
+    lineHeight: 1.5,
+    overflow: "hidden",
   };
 
   const iconBtn: React.CSSProperties = {
@@ -100,7 +113,7 @@ export default function PhotoCard({
   };
 
   return (
-    <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
+    <div className="wm-photocard-card bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="wm-photocard-row flex gap-2.5 items-start">
         {/* Drag handle — only the handle is draggable; inputs stay usable */}
         {dragHandleProps && (
@@ -170,7 +183,7 @@ export default function PhotoCard({
         </div>
 
         <div className="flex-1 flex flex-col gap-1">
-          <div className="flex gap-1 items-center">
+          <div className="wm-field-row flex gap-1 items-center">
             <input
               placeholder="A short label for this photo..."
               value={p.caption}
@@ -191,11 +204,14 @@ export default function PhotoCard({
             }}
           />
 
-          <div className="flex gap-1 items-start">
+          <div className="wm-field-row flex gap-1 items-start">
             <textarea
+              ref={notesRef}
               placeholder="What's the story behind this moment?"
               value={p.notes}
               onChange={(e) => up(p.id, "notes", e.target.value)}
+              onInput={(e) => autosize(e.currentTarget)}
+              rows={2}
               style={textareaStyle}
             />
             {p.notes && (
@@ -228,10 +244,13 @@ export default function PhotoCard({
           {showParagraph && (
             <div className="mt-1">
               <textarea
+                ref={paraRef}
                 placeholder="Full paragraph..."
                 value={p.paragraph || ""}
                 onChange={(e) => up(p.id, "paragraph", e.target.value)}
-                style={{ ...textareaStyle, minHeight: 70, resize: "vertical", lineHeight: 1.6 }}
+                onInput={(e) => autosize(e.currentTarget)}
+                rows={4}
+                style={{ ...textareaStyle, minHeight: 90, lineHeight: 1.6 }}
               />
               <AiSuggestion
                 text={p.aiParagraph}

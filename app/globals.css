@@ -228,7 +228,11 @@ body {
   }
 }
 
-/* ── PhotoCard / PhotoStyleRow — stack vertically on phones ── */
+/* ── PhotoCard — stack vertically on phones, drag handle in top-right ── */
+.wm-photocard-card {
+  position: relative;
+}
+
 @media (max-width: 480px) {
   .wm-photocard-row {
     flex-direction: column;
@@ -249,13 +253,36 @@ body {
     height: 80px !important;
   }
 
+  /* Drag handle pinned to the top-right corner of the card, out of the
+     vertical scroll path. */
   .wm-photocard-drag {
-    width: 100% !important;
+    position: absolute !important;
+    top: 6px !important;
+    right: 6px !important;
+    width: 32px !important;
     height: 32px !important;
-    flex-direction: row !important;
+    align-self: auto !important;
+    z-index: 2;
   }
-  .wm-photocard-drag svg {
-    transform: rotate(90deg);
+
+  /* Leave room on the thumb row so the Cover toggle / label don't slide
+     under the drag handle. */
+  .wm-photocard-thumb {
+    padding-right: 36px !important;
+  }
+
+  /* Input + AI button rows: input takes full width, AI button wraps
+     underneath aligned to the right. */
+  .wm-field-row {
+    flex-wrap: wrap !important;
+  }
+  .wm-field-row > input,
+  .wm-field-row > textarea {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+  .wm-field-row > button {
+    margin-left: auto;
   }
 }
 
