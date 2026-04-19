@@ -28,6 +28,24 @@ body {
   font-family: var(--font-body), sans-serif;
 }
 
+/* ── Mobile input fix ──
+   iOS Safari auto-zooms when a focused input's font-size is below 16px.
+   Enforce 16px on narrow viewports only; desktop keeps the tighter 13–14px
+   values set via inline styles. */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="search"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="number"],
+  input:not([type]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -147,12 +165,12 @@ body {
 @media (max-width: 640px) {
   .wm-magazine-pair {
     grid-template-columns: 1fr;
-    gap: 28px;
+    gap: 20px;
   }
 
   .wm-grid-layout {
     grid-template-columns: 1fr;
-    gap: 28px;
+    gap: 20px;
   }
 
   /* Cover text scales down on mobile */
@@ -170,5 +188,134 @@ body {
   .wm-classic-divider {
     margin-top: 18px !important;
     margin-bottom: 18px !important;
+  }
+}
+
+/* ── Quick Create / Full Builder picker grids ──
+   Layout picker: 5-col on desktop → 3-col below 480px (wraps 3+2).
+   Visual/Voice: 2-col on desktop → 1-col below 480px. */
+.wm-layout-picker {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.wm-picker-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 480px) {
+  .wm-layout-picker {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .wm-picker-2col {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  /* Style-preview auto-fill grid — force 1-column on narrow phones
+     so the preview cards actually show their mock content. */
+  .wm-style-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Voice picker auto-fill — keep 2-col until it's really tight */
+  .wm-voice-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* ── PhotoCard / PhotoStyleRow — stack vertically on phones ── */
+@media (max-width: 480px) {
+  .wm-photocard-row {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .wm-photocard-thumb {
+    width: 100% !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .wm-photocard-thumb img {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  .wm-photocard-drag {
+    width: 100% !important;
+    height: 32px !important;
+    flex-direction: row !important;
+  }
+  .wm-photocard-drag svg {
+    transform: rotate(90deg);
+  }
+}
+
+/* ── RefinePanel on mobile — scroll + safe-area ── */
+.wm-refine-panel {
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+}
+
+.wm-refine-trigger {
+  bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+}
+
+/* ── Filmstrip smooth iOS scroll ── */
+[data-layout="filmstrip"] {
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+}
+[data-layout="filmstrip"] > * {
+  scroll-snap-align: start;
+}
+
+/* ── Global overflow safety net ── */
+html, body {
+  overflow-x: hidden;
+}
+
+/* ── Download dropdown — keep inside viewport on mobile ── */
+@media (max-width: 480px) {
+  .wm-download-dropdown {
+    right: 12px !important;
+    left: auto !important;
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* ── Journal preview body padding — extra bottom for refine button
+   plus safe-area ── */
+.wm-journal-body {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+}
+
+/* ── Stacked layout on narrow phones — ease the 85% maxWidth so
+   entries don't collapse to thin cards after rotate. ── */
+@media (max-width: 480px) {
+  .wm-stacked-entry {
+    max-width: 100% !important;
+  }
+}
+
+/* ── Touch targets on mobile ──
+   Bump pill/chip heights so they meet the 44px guideline, without
+   destroying density on desktop. */
+@media (max-width: 640px) {
+  .wm-chip,
+  .wm-refine-panel button {
+    min-height: 36px;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
   }
 }

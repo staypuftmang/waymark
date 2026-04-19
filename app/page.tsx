@@ -400,6 +400,7 @@ export default function Page() {
     cursor: "pointer",
     background: "var(--color-card)",
   };
+  const chipClass = "wm-chip";
   const chip = (sel: boolean): React.CSSProperties => ({
     padding: "4px 10px",
     borderRadius: 3,
@@ -790,13 +791,13 @@ Waymark
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4" style={{ marginTop: 24 }}>
+            <div className="wm-picker-2col" style={{ marginTop: 24 }}>
               <div>
                 <label style={labelStyle}>Visual</label>
                 <HelperText>Sets the look — fonts, colors, and mood.</HelperText>
                 <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
                   {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
-                    <button key={k} onClick={() => { setVk(k); track("style_selected", { style: k }); }} style={chip(vk === k)}>{s.label}</button>
+                    <button key={k} className={chipClass} onClick={() => { setVk(k); track("style_selected", { style: k }); }} style={chip(vk === k)}>{s.label}</button>
                   ))}
                 </div>
               </div>
@@ -805,7 +806,7 @@ Waymark
                 <HelperText>Sets the writing style the AI uses.</HelperText>
                 <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
                   {(Object.entries(WS) as [WordStyleKey, typeof WS[WordStyleKey]][]).map(([k, w]) => (
-                    <button key={k} onClick={() => setWs(k)} style={chip(ws === k)}>{w.label}</button>
+                    <button key={k} className={chipClass} onClick={() => setWs(k)} style={chip(ws === k)}>{w.label}</button>
                   ))}
                 </div>
               </div>
@@ -813,7 +814,7 @@ Waymark
 
             <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Layout</label>
             <HelperText>How your photos are arranged in the journal.</HelperText>
-            <div className="grid grid-cols-5 gap-1.5" style={{ marginTop: 8 }}>
+            <div className="wm-layout-picker" style={{ marginTop: 8 }}>
               {(Object.entries(LO) as [LayoutKey, typeof LO[LayoutKey]][]).map(([k, l]) => (
                 <div
                   key={k}
@@ -1100,7 +1101,7 @@ Waymark
 
           <label style={{ ...labelStyle, marginBottom: 8 }}>Visual Style</label>
           <div
-            className="grid gap-2.5"
+            className="wm-style-grid grid gap-2.5"
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))", marginBottom: 24 }}
           >
             {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
@@ -1109,7 +1110,7 @@ Waymark
           </div>
 
           <label style={{ ...labelStyle, marginBottom: 8 }}>Layout</label>
-          <div className="grid grid-cols-5 gap-1.5" style={{ marginBottom: 24 }}>
+          <div className="wm-layout-picker" style={{ marginBottom: 24 }}>
             {(Object.entries(LO) as [LayoutKey, typeof LO[LayoutKey]][]).map(([k, l]) => (
               <div
                 key={k}
@@ -1139,7 +1140,7 @@ Waymark
 
           <label style={{ ...labelStyle, marginBottom: 8 }}>Voice</label>
           <div
-            className="grid gap-1.5"
+            className="wm-voice-grid grid gap-1.5"
             style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", marginBottom: 22 }}
           >
             {(Object.entries(WS) as [WordStyleKey, typeof WS[WordStyleKey]][]).map(([k, w]) => (

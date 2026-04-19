@@ -85,6 +85,7 @@ export default function DatePicker({ startDate, endDate, onStartChange, onEndCha
             boxShadow: "0 8px 30px rgba(0,0,0,.12)",
             padding: 16,
             width: 300,
+            maxWidth: "calc(100vw - 24px)",
           }}
         >
           <div className="flex justify-between items-center mb-2.5">

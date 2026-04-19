@@ -26,6 +26,7 @@ export default function Stacked({ photos, vs, vk, onPhotoClick }: LayoutProps) {
         return (
           <div
             key={p.id}
+            className="wm-stacked-entry"
             style={{
               background: vs.bg,
               border: `1px solid ${vs.fg}18`,

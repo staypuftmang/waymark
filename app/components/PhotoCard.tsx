@@ -101,12 +101,12 @@ export default function PhotoCard({
 
   return (
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
-      <div className="flex gap-2.5 items-start">
+      <div className="wm-photocard-row flex gap-2.5 items-start">
         {/* Drag handle — only the handle is draggable; inputs stay usable */}
         {dragHandleProps && (
           <div
             {...dragHandleProps}
-            className="wm-drag-handle flex items-center justify-center shrink-0"
+            className="wm-drag-handle wm-photocard-drag flex items-center justify-center shrink-0"
             style={{
               width: 24,
               height: 44,
@@ -132,7 +132,7 @@ export default function PhotoCard({
           </div>
         )}
 
-        <div className="flex flex-col items-center gap-1 shrink-0">
+        <div className="wm-photocard-thumb flex flex-col items-center gap-1 shrink-0">
           <img
             src={p.src}
             className="object-cover"

@@ -147,7 +147,7 @@ export default function JournalPreview({
             </button>
             {downloadOpen && (
               <div
-                className="absolute z-[200]"
+                className="wm-download-dropdown absolute z-[200]"
                 style={{
                   top: "calc(100% + 6px)",
                   right: 0,
@@ -359,6 +359,7 @@ export default function JournalPreview({
 
       {/* Body */}
       <div
+        className="wm-journal-body"
         style={{
           maxWidth: lo === "filmstrip" ? 960 : 780,
           margin: "0 auto",

@@ -20,7 +20,7 @@ export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: Refine
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed z-[200] flex items-center justify-center border-none cursor-pointer"
+        className="wm-refine-trigger fixed z-[200] flex items-center justify-center border-none cursor-pointer"
         style={{
           bottom: 20,
           right: 20,
@@ -83,7 +83,7 @@ export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: Refine
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-[200]"
+      className="wm-refine-panel fixed bottom-0 left-0 right-0 z-[200]"
       style={{
         background: vs.bg,
         borderTop: `2px solid ${vs.accent}`,

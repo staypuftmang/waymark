@@ -219,13 +219,13 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
                       <div className="flex gap-1.5 mt-2">
                         <button
                           onClick={() => accept1(p.id)}
-                          style={{ ...btnAccent, padding: "4px 14px", fontSize: 11 }}
+                          style={{ ...btnAccent, padding: "8px 16px", fontSize: 12, minHeight: 36, minWidth: 80 }}
                         >
                           Accept
                         </button>
                         <button
                           onClick={() => reject1(p.id)}
-                          style={{ ...btnSecondary, padding: "4px 14px", fontSize: 11 }}
+                          style={{ ...btnSecondary, padding: "8px 16px", fontSize: 12, minHeight: 36, minWidth: 80 }}
                         >
                           Reject
                         </button>
