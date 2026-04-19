@@ -7,6 +7,7 @@ import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener, setRateLimitListener } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
+import { useHistory, ContentSnapshot } from "@/app/lib/history";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -54,7 +55,23 @@ const btnSecondary: React.CSSProperties = {
 };
 
 /* ── Header ── */
-function Header({ children, right, onLogoClick }: { children?: React.ReactNode; right?: React.ReactNode; onLogoClick?: () => void }) {
+interface HistoryControls {
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+function Header({
+  children,
+  right,
+  onLogoClick,
+  history,
+}: {
+  children?: React.ReactNode;
+  right?: React.ReactNode;
+  onLogoClick?: () => void;
+  history?: HistoryControls;
+}) {
   return (
     <div
       className="sticky top-0 z-[100] flex items-center justify-between"
@@ -75,9 +92,52 @@ function Header({ children, right, onLogoClick }: { children?: React.ReactNode; 
       >
         Waymark
       </button>
-      {right || null}
+      <div className="flex items-center" style={{ gap: 8 }}>
+        {history && <UndoRedoButtons {...history} />}
+        {right || null}
+      </div>
       {children || null}
     </div>
+  );
+}
+
+function UndoRedoButtons({ undo, redo, canUndo, canRedo }: HistoryControls) {
+  const btnStyle = (enabled: boolean): React.CSSProperties => ({
+    width: 44,
+    height: 44,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "transparent",
+    border: "none",
+    cursor: enabled ? "pointer" : "not-allowed",
+    color: "var(--color-paper)",
+    opacity: enabled ? 0.7 : 0.3,
+    fontSize: 20,
+    fontFamily: "var(--font-body)",
+    padding: 0,
+  });
+  return (
+    <>
+      <button
+        onClick={undo}
+        disabled={!canUndo}
+        aria-label="Undo"
+        title="Undo (Ctrl+Z)"
+        style={btnStyle(canUndo)}
+      >
+        &#x21B6;
+      </button>
+      <button
+        onClick={redo}
+        disabled={!canRedo}
+        aria-label="Redo"
+        title="Redo (Ctrl+Shift+Z)"
+        style={btnStyle(canRedo)}
+      >
+        &#x21B7;
+      </button>
+    </>
   );
 }
 
@@ -124,6 +184,58 @@ export default function Page() {
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Undo / redo (content changes only) ──
+  const getContentSnapshot = useCallback<() => ContentSnapshot>(() => ({
+    tripTitle,
+    tripBrief,
+    startDate: startDate ? startDate.toISOString() : null,
+    endDate: endDate ? endDate.toISOString() : null,
+    photos,
+    coverPhotoId,
+  }), [tripTitle, tripBrief, startDate, endDate, photos, coverPhotoId]);
+
+  const applyContentSnapshot = useCallback((s: ContentSnapshot) => {
+    setTripTitle(s.tripTitle);
+    setTripBrief(s.tripBrief);
+    setStartDate(s.startDate ? new Date(s.startDate) : null);
+    setEndDate(s.endDate ? new Date(s.endDate) : null);
+    setPhotos(s.photos);
+    setCoverPhotoId(s.coverPhotoId);
+  }, []);
+
+  const { saveToHistory, undo, redo, clearHistory, canUndo, canRedo } = useHistory(
+    getContentSnapshot,
+    applyContentSnapshot,
+    quickGenerating,
+  );
+
+  // Only show undo/redo on builder pages: Quick Create setup (0) / review (10)
+  // or Full Builder steps 0–2. Landing (mode null) and preview (99) hide it.
+  const isBuilderPage =
+    (mode === "quick" && (step === 0 || step === 10)) ||
+    (mode === "full" && step >= 0 && step <= 2);
+
+  // Keyboard shortcuts — only bind when undo/redo is available.
+  useEffect(() => {
+    if (!isBuilderPage) return;
+    const handler = (e: KeyboardEvent) => {
+      const isMac = typeof navigator !== "undefined" &&
+        navigator.platform.toUpperCase().includes("MAC");
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isBuilderPage, undo, redo]);
 
   // ── Load saved state on mount + register fallback + rate-limit listeners ──
   useEffect(() => {
@@ -292,13 +404,22 @@ export default function Page() {
     setPhotos((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
 
   const removePhoto = (id: number) => {
+    saveToHistory();
     setPhotos((p) => p.filter((x) => x.id !== id));
     // Clear cover selection if the cover photo is deleted (keep title/subtitle)
     if (coverPhotoId === id) setCoverPhotoId(null);
   };
 
   const toggleCover = (id: number) => {
+    saveToHistory();
     setCoverPhotoId((current) => (current === id ? null : id));
+  };
+
+  // Wrapper for drag-and-drop reorder: record a history entry before the
+  // reordered array is committed.
+  const reorderPhotos = (next: Photo[]) => {
+    saveToHistory();
+    setPhotos(next);
   };
 
   // Auto-sync coverTitle ← tripTitle until user manually edits coverTitle
@@ -316,6 +437,7 @@ export default function Page() {
 
   const doReset = () => {
     clearState();
+    clearHistory();
     setMode(null);
     setStep(0);
     setPhotos([]);
@@ -645,14 +767,14 @@ Waymark
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header onLogoClick={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
 
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Trip Title</label>
-              <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
+              <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} onFocus={saveToHistory} />
               <HelperText>This becomes the headline of your journal.</HelperText>
             </div>
 
@@ -669,6 +791,7 @@ Waymark
                 placeholder="What made this trip special? The people, the food, the unexpected moments..."
                 value={tripBrief}
                 onChange={(e) => setTripBrief(e.target.value)}
+                onFocus={saveToHistory}
               />
               <HelperText>The AI uses this as inspiration to write unique content for each photo. This text also appears as the opening paragraph of your journal.</HelperText>
             </div>
@@ -694,7 +817,7 @@ Waymark
                 <div className="flex gap-3 flex-wrap" style={{ marginTop: 10 }}>
                   <SortablePhotoList
                     photos={photos}
-                    onReorder={setPhotos}
+                    onReorder={reorderPhotos}
                     disabled={quickGenerating}
                     strategy="horizontal"
                     renderItem={(p, _i, _total, handleProps) => {
@@ -862,7 +985,7 @@ Waymark
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header onLogoClick={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -879,13 +1002,13 @@ Waymark
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
               <SortablePhotoList
                 photos={photos}
-                onReorder={setPhotos}
+                onReorder={reorderPhotos}
                 disabled={quickGenerating}
                 strategy="vertical"
                 renderItem={(p, i, total, handleProps) => (
@@ -901,6 +1024,7 @@ Waymark
                     dragHandleProps={handleProps}
                     index={i}
                     total={total}
+                    onSaveHistory={saveToHistory}
                   />
                 )}
                 renderOverlay={(p) => (
@@ -936,7 +1060,7 @@ Waymark
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header onLogoClick={reset}>
+        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }}>
           <div className="flex gap-0.5">
             {[0, 1, 2].map((s) => (
               <div
@@ -964,7 +1088,7 @@ Waymark
 
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Trip Title</label>
-            <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
+            <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} onFocus={saveToHistory} />
             <HelperText>This becomes the headline of your journal.</HelperText>
           </div>
 
@@ -1034,7 +1158,7 @@ Waymark
           <div className="grid gap-2.5" style={{ marginTop: 12 }}>
             <SortablePhotoList
               photos={photos}
-              onReorder={setPhotos}
+              onReorder={reorderPhotos}
               disabled={quickGenerating}
               strategy="vertical"
               renderItem={(p, i, total, handleProps) => (
@@ -1051,6 +1175,7 @@ Waymark
                   isCover={coverPhotoId === p.id}
                   onToggleCover={toggleCover}
                   dragHandleProps={handleProps}
+                  onSaveHistory={saveToHistory}
                 />
               )}
               renderOverlay={(p) => (
@@ -1174,7 +1299,7 @@ Waymark
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
@@ -1182,7 +1307,7 @@ Waymark
           <div className="grid gap-2" style={{ marginBottom: 8 }}>
             <SortablePhotoList
               photos={photos}
-              onReorder={setPhotos}
+              onReorder={reorderPhotos}
               disabled={quickGenerating}
               strategy="vertical"
               renderItem={(p, i, total, handleProps) => (

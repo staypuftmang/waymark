@@ -21,6 +21,9 @@ interface PhotoCardProps {
   isCover: boolean;
   onToggleCover: (id: number) => void;
   dragHandleProps?: Record<string, unknown>;
+  /** Called before any content-mutating user action — field blur,
+   * accept/reject of AI suggestions. Enables parent-side undo history. */
+  onSaveHistory?: () => void;
 }
 
 export default function PhotoCard({
@@ -36,7 +39,9 @@ export default function PhotoCard({
   isCover,
   onToggleCover,
   dragHandleProps,
+  onSaveHistory,
 }: PhotoCardProps) {
+  const save = () => onSaveHistory?.();
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
   const [loadingParagraph, setLP] = useState(false);
@@ -188,6 +193,7 @@ export default function PhotoCard({
               placeholder="A short label for this photo..."
               value={p.caption}
               onChange={(e) => up(p.id, "caption", e.target.value)}
+              onFocus={save}
               style={{ ...inputStyle, fontSize: 13 }}
             />
             {p.caption && (
@@ -197,8 +203,9 @@ export default function PhotoCard({
           {idx === 0 && <HelperText>Captions appear as small labels under your photos in the journal.</HelperText>}
           <AiSuggestion
             text={p.aiCaption}
-            onClear={() => up(p.id, "aiCaption", "")}
+            onClear={() => { save(); up(p.id, "aiCaption", ""); }}
             onAccept={() => {
+              save();
               up(p.id, "caption", p.aiCaption);
               up(p.id, "aiCaption", "");
             }}
@@ -211,6 +218,7 @@ export default function PhotoCard({
               value={p.notes}
               onChange={(e) => up(p.id, "notes", e.target.value)}
               onInput={(e) => autosize(e.currentTarget)}
+              onFocus={save}
               rows={2}
               style={textareaStyle}
             />
@@ -221,8 +229,9 @@ export default function PhotoCard({
           {idx === 0 && <HelperText>Notes become the main readable text under each photo. The more you write, the better the AI can help.</HelperText>}
           <AiSuggestion
             text={p.aiNotes}
-            onClear={() => up(p.id, "aiNotes", "")}
+            onClear={() => { save(); up(p.id, "aiNotes", ""); }}
             onAccept={() => {
+              save();
               up(p.id, "notes", p.aiNotes);
               up(p.id, "aiNotes", "");
             }}
@@ -249,13 +258,15 @@ export default function PhotoCard({
                 value={p.paragraph || ""}
                 onChange={(e) => up(p.id, "paragraph", e.target.value)}
                 onInput={(e) => autosize(e.currentTarget)}
+                onFocus={save}
                 rows={5}
                 style={{ ...textareaStyle, minHeight: 120, lineHeight: 1.6 }}
               />
               <AiSuggestion
                 text={p.aiParagraph}
-                onClear={() => up(p.id, "aiParagraph", "")}
+                onClear={() => { save(); up(p.id, "aiParagraph", ""); }}
                 onAccept={() => {
+                  save();
                   up(p.id, "paragraph", p.aiParagraph);
                   up(p.id, "aiParagraph", "");
                 }}

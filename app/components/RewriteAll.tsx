@@ -15,6 +15,7 @@ interface RewriteAllProps {
   wordStyle: WordStyleKey;
   visualStyle: VisualStyleKey;
   dateDisplay: string;
+  onSaveHistory?: () => void;
 }
 
 interface StagedResult {
@@ -23,7 +24,8 @@ interface StagedResult {
   paragraph?: string;
 }
 
-export default function RewriteAll({ photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd }: RewriteAllProps) {
+export default function RewriteAll({ photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd, onSaveHistory }: RewriteAllProps) {
+  const save = () => onSaveHistory?.();
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
 
@@ -58,6 +60,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
 
   const acceptAll = () => {
     if (!staged) return;
+    save();
     for (const p of photos) {
       const s = staged[p.id];
       if (!s) continue;
@@ -72,6 +75,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
     if (!staged) return;
     const s = staged[id];
     if (!s) return;
+    save();
     if (s.caption) up(id, "aiCaption", s.caption);
     if (s.notes) up(id, "aiNotes", s.notes);
     if (s.paragraph) up(id, "aiParagraph", s.paragraph);
