@@ -26,13 +26,30 @@ function prepareForCapture(element: HTMLElement) {
     originals.push(() => { refineBtn.style.display = orig; });
   }
 
+  // Cover: shrink the outer wrapper to match the hero image's max-width, and
+  // drop horizontal padding. Otherwise the wrapper captures at viewport width
+  // (e.g. 1280px on desktop) with the image only 960px inside it, and the
+  // whole thing gets scaled down to fit PDF content width — making the hero
+  // image look small with empty side gutters.
   const cover = element.querySelector("[data-export-cover]") as HTMLElement | null;
   if (cover) {
     const origMH = cover.style.minHeight;
     const origP = cover.style.padding;
+    const origW = cover.style.width;
+    const origMW = cover.style.maxWidth;
+    const origM = cover.style.margin;
     cover.style.minHeight = "auto";
-    cover.style.padding = "48px 24px 32px";
-    originals.push(() => { cover.style.minHeight = origMH; cover.style.padding = origP; });
+    cover.style.padding = "0 0 28px";
+    cover.style.width = "960px";
+    cover.style.maxWidth = "960px";
+    cover.style.margin = "0 auto";
+    originals.push(() => {
+      cover.style.minHeight = origMH;
+      cover.style.padding = origP;
+      cover.style.width = origW;
+      cover.style.maxWidth = origMW;
+      cover.style.margin = origM;
+    });
   }
 
   // Expand filmstrip so every photo captures — not just the visible slice.
@@ -147,35 +164,40 @@ export async function exportPDF(
 
     // Place one captured unit on the current page, starting a new page if it
     // doesn't fit the remaining space. Oversize units are scaled to one page.
-    const place = (unit: { dataUrl: string; width: number; height: number }, opts: { forceNewPage?: boolean; centerOnPage?: boolean } = {}) => {
+    const place = (
+      unit: { dataUrl: string; width: number; height: number },
+      opts: { forceNewPage?: boolean; extraBottom?: number } = {}
+    ) => {
+      const bottomReserve = opts.extraBottom ?? 0;
       let w = unit.width;
       let h = unit.height;
-      if (h > contentHeight) {
-        const s = contentHeight / h;
-        h = contentHeight;
+      const maxH = contentHeight - bottomReserve;
+      if (h > maxH) {
+        const s = maxH / h;
+        h = maxH;
         w *= s;
       }
 
-      const spaceLeft = pdfHeight - margin - yCursor;
+      const spaceLeft = pdfHeight - margin - yCursor - bottomReserve;
       if (opts.forceNewPage || h > spaceLeft) {
         primeNewPage();
       }
 
       const x = margin + (contentWidth - w) / 2;
-      const y = opts.centerOnPage ? margin + (contentHeight - h) / 2 : yCursor;
-      pdf.addImage(unit.dataUrl, "JPEG", x, y, w, h);
-      yCursor = (opts.centerOnPage ? y + h : yCursor + h) + entryGap;
+      pdf.addImage(unit.dataUrl, "JPEG", x, yCursor, w, h);
+      yCursor += h + entryGap;
     };
 
-    // Cover gets its own page, vertically centered
+    // Cover: full PDF width at the top of page 1. Occupies roughly the top
+    // half of the page (hero is 16:9 → ~305pt tall at 539pt wide; trip brief
+    // and padding push that closer to 50–60%). No vertical centering — that
+    // previously left the hero floating in the middle with blank space.
+    primeNewPage();
     if (cover) {
-      primeNewPage();
       const coverUnit = await captureUnit(cover, bgColor, contentWidth);
-      place(coverUnit, { centerOnPage: true });
-      // Force a fresh page for the first entry
-      yCursor = pdfHeight; // guarantees the next place() triggers primeNewPage
-    } else {
-      primeNewPage();
+      place(coverUnit);
+      // Push the first entry onto a fresh page regardless of remaining space.
+      yCursor = pdfHeight;
     }
 
     for (const entry of entries) {
@@ -184,8 +206,10 @@ export async function exportPDF(
     }
 
     if (footer) {
+      // Reserve extra bottom margin so the "Made with Waymark" line never
+      // sits flush against the page edge.
       const footerUnit = await captureUnit(footer, bgColor, contentWidth);
-      place(footerUnit);
+      place(footerUnit, { extraBottom: 28 });
     }
 
     pdf.save(`Waymark - ${sanitizeFilename(title)}.pdf`);
