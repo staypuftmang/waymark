@@ -15,6 +15,9 @@ interface PhotoStyleRowProps {
   dateDisplay: string;
   isCover: boolean;
   onToggleCover: (id: number) => void;
+  dragHandleProps?: Record<string, unknown>;
+  index?: number;
+  total?: number;
 }
 
 export default function PhotoStyleRow({
@@ -26,6 +29,9 @@ export default function PhotoStyleRow({
   dateDisplay: dd,
   isCover,
   onToggleCover,
+  dragHandleProps,
+  index,
+  total,
 }: PhotoStyleRowProps) {
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
@@ -142,6 +148,33 @@ export default function PhotoStyleRow({
   return (
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
       <div className="flex gap-2 items-start mb-2">
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            className="wm-drag-handle flex items-center justify-center shrink-0"
+            style={{
+              width: 20,
+              height: 44,
+              cursor: "grab",
+              color: "var(--color-warm)",
+              opacity: 0.4,
+              touchAction: "none",
+              userSelect: "none",
+            }}
+            aria-label={`Drag to reorder${total ? ` photo ${(index ?? 0) + 1} of ${total}` : ""}`}
+            role="button"
+            tabIndex={0}
+          >
+            <svg width="12" height="18" viewBox="0 0 12 18" fill="currentColor" aria-hidden="true">
+              <circle cx="3" cy="3" r="1.4" />
+              <circle cx="9" cy="3" r="1.4" />
+              <circle cx="3" cy="9" r="1.4" />
+              <circle cx="9" cy="9" r="1.4" />
+              <circle cx="3" cy="15" r="1.4" />
+              <circle cx="9" cy="15" r="1.4" />
+            </svg>
+          </div>
+        )}
         <img
           src={p.src}
           className="object-cover shrink-0"

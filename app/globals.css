@@ -101,6 +101,15 @@ body {
   color: var(--color-accent) !important;
 }
 
+/* Drag handle — visible but quiet, brighter on hover/focus */
+.wm-drag-handle:hover,
+.wm-drag-handle:focus-visible {
+  opacity: 0.8 !important;
+}
+.wm-drag-handle:active {
+  cursor: grabbing !important;
+}
+
 /* Lightbox animations */
 @keyframes wmLightboxFade {
   from { opacity: 0; }

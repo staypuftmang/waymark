@@ -13,7 +13,6 @@ interface PhotoCardProps {
   index: number;
   total: number;
   onUpdate: (id: number, field: string, value: string) => void;
-  onMove: (id: number, dir: number) => void;
   onRemove: (id: number) => void;
   title: string;
   brief: string;
@@ -21,6 +20,7 @@ interface PhotoCardProps {
   dateDisplay: string;
   isCover: boolean;
   onToggleCover: (id: number) => void;
+  dragHandleProps?: Record<string, unknown>;
 }
 
 export default function PhotoCard({
@@ -28,7 +28,6 @@ export default function PhotoCard({
   index: idx,
   total,
   onUpdate: up,
-  onMove: mv,
   onRemove: rm,
   title,
   brief,
@@ -36,6 +35,7 @@ export default function PhotoCard({
   dateDisplay: dd,
   isCover,
   onToggleCover,
+  dragHandleProps,
 }: PhotoCardProps) {
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
@@ -101,7 +101,37 @@ export default function PhotoCard({
 
   return (
     <div className="bg-card border border-border" style={{ borderRadius: 5, padding: 12 }}>
-      <div className="flex gap-2.5">
+      <div className="flex gap-2.5 items-start">
+        {/* Drag handle — only the handle is draggable; inputs stay usable */}
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            className="wm-drag-handle flex items-center justify-center shrink-0"
+            style={{
+              width: 24,
+              height: 44,
+              cursor: "grab",
+              color: "var(--color-warm)",
+              opacity: 0.4,
+              touchAction: "none",
+              userSelect: "none",
+              alignSelf: "center",
+            }}
+            aria-label={`Drag to reorder photo ${idx + 1} of ${total}`}
+            role="button"
+            tabIndex={0}
+          >
+            <svg width="14" height="20" viewBox="0 0 14 20" fill="currentColor" aria-hidden="true">
+              <circle cx="4" cy="4" r="1.6" />
+              <circle cx="10" cy="4" r="1.6" />
+              <circle cx="4" cy="10" r="1.6" />
+              <circle cx="10" cy="10" r="1.6" />
+              <circle cx="4" cy="16" r="1.6" />
+              <circle cx="10" cy="16" r="1.6" />
+            </svg>
+          </div>
+        )}
+
         <div className="flex flex-col items-center gap-1 shrink-0">
           <img
             src={p.src}
@@ -114,21 +144,13 @@ export default function PhotoCard({
             }}
             alt=""
           />
-          <div className="flex gap-0.5">
-            {idx > 0 && (
-              <button style={iconBtn} onClick={() => mv(p.id, -1)}>
-                &#x2191;
-              </button>
-            )}
-            {idx < total - 1 && (
-              <button style={iconBtn} onClick={() => mv(p.id, 1)}>
-                &#x2193;
-              </button>
-            )}
-            <button style={{ ...iconBtn, color: "var(--color-accent)" }} onClick={() => rm(p.id)}>
-              &#x00D7;
-            </button>
-          </div>
+          <button
+            style={{ ...iconBtn, color: "var(--color-accent)" }}
+            onClick={() => rm(p.id)}
+            aria-label="Remove photo"
+          >
+            &#x00D7;
+          </button>
           <button
             onClick={() => onToggleCover(p.id)}
             className="wm-cover-link cursor-pointer font-body bg-transparent p-0"

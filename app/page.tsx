@@ -16,6 +16,7 @@ import RewriteAll from "@/app/components/RewriteAll";
 import JournalPreview from "@/app/components/JournalPreview";
 import HelperText from "@/app/components/HelperText";
 import CoverEditor from "@/app/components/CoverEditor";
+import SortablePhotoList from "@/app/components/SortablePhotoList";
 
 /* ── Shared inline styles ── */
 const iStyle: React.CSSProperties = {
@@ -312,14 +313,6 @@ export default function Page() {
     setCoverTitleEdited(true);
   };
 
-  const movePhoto = (id: number, dir: number) =>
-    setPhotos((p) => {
-      const i = p.findIndex((x) => x.id === id);
-      if ((dir === -1 && i === 0) || (dir === 1 && i === p.length - 1)) return p;
-      const c = [...p];
-      [c[i], c[i + dir]] = [c[i + dir], c[i]];
-      return c;
-    });
 
   const doReset = () => {
     clearState();
@@ -696,76 +689,103 @@ Waymark
                     {uploadErrors.join(". ")}
                   </div>
                 )}
-                <HelperText>Tap any photo to set it as your cover. (optional)</HelperText>
+                <HelperText>Tap any photo to set it as your cover. (optional) &middot; Drag to reorder.</HelperText>
                 <div className="flex gap-3 flex-wrap" style={{ marginTop: 10 }}>
-                  {photos.map((p) => {
-                    const isCover = coverPhotoId === p.id;
-                    return (
-                      <div key={p.id} className="flex flex-col items-center" style={{ gap: 4 }}>
-                        <div className="relative">
-                          <button
-                            onClick={() => toggleCover(p.id)}
-                            className="wm-cover-thumb cursor-pointer p-0 bg-transparent block"
-                            style={{
-                              border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
-                              borderRadius: 4,
-                            }}
-                            aria-label={isCover ? "Cover photo" : "Set as cover"}
-                            aria-pressed={isCover}
-                          >
-                            <img
-                              src={p.src}
-                              className="object-cover block"
-                              style={{ width: 72, height: 72, borderRadius: 3 }}
-                              alt=""
-                            />
-                            {!isCover && (
-                              <span
-                                className="wm-cover-hover absolute flex items-center justify-center"
-                                style={{
-                                  top: 2,
-                                  left: 2,
-                                  right: 2,
-                                  bottom: 2,
-                                  background: "rgba(26,24,21,0.45)",
-                                  color: "#fff",
-                                  borderRadius: 2,
-                                  opacity: 0,
-                                  transition: "opacity 0.15s ease",
-                                  pointerEvents: "none",
-                                }}
-                              >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                                  <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                                </svg>
-                              </span>
-                            )}
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
-                            className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
-                            style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
-                            aria-label="Remove photo"
-                          >
-                            &#x00D7;
-                          </button>
-                        </div>
-                        {isCover && (
-                          <div
-                            className="text-stone"
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 600,
-                              letterSpacing: 1.2,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Cover &#x2713;
+                  <SortablePhotoList
+                    photos={photos}
+                    onReorder={setPhotos}
+                    disabled={quickGenerating}
+                    strategy="horizontal"
+                    renderItem={(p, _i, _total, handleProps) => {
+                      const isCover = coverPhotoId === p.id;
+                      return (
+                        <div
+                          {...handleProps}
+                          className="flex flex-col items-center"
+                          style={{ gap: 4, touchAction: "none" }}
+                        >
+                          <div className="relative">
+                            <button
+                              onClick={() => toggleCover(p.id)}
+                              className="wm-cover-thumb cursor-pointer p-0 bg-transparent block"
+                              style={{
+                                border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+                                borderRadius: 4,
+                              }}
+                              aria-label={isCover ? "Cover photo" : "Set as cover"}
+                              aria-pressed={isCover}
+                            >
+                              <img
+                                src={p.src}
+                                className="object-cover block"
+                                style={{ width: 72, height: 72, borderRadius: 3 }}
+                                alt=""
+                              />
+                              {!isCover && (
+                                <span
+                                  className="wm-cover-hover absolute flex items-center justify-center"
+                                  style={{
+                                    top: 2,
+                                    left: 2,
+                                    right: 2,
+                                    bottom: 2,
+                                    background: "rgba(26,24,21,0.45)",
+                                    color: "#fff",
+                                    borderRadius: 2,
+                                    opacity: 0,
+                                    transition: "opacity 0.15s ease",
+                                    pointerEvents: "none",
+                                  }}
+                                >
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                                  </svg>
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
+                              className="absolute flex items-center justify-center bg-accent text-white border-none cursor-pointer"
+                              style={{ top: -4, right: -4, width: 18, height: 18, borderRadius: 9, fontSize: 10, zIndex: 2 }}
+                              aria-label="Remove photo"
+                            >
+                              &#x00D7;
+                            </button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {isCover && (
+                            <div
+                              className="text-stone"
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 600,
+                                letterSpacing: 1.2,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              Cover &#x2713;
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
+                    renderOverlay={(p) => (
+                      <img
+                        src={p.src}
+                        alt=""
+                        style={{
+                          width: 72,
+                          height: 72,
+                          objectFit: "cover",
+                          borderRadius: 4,
+                          border: "2px solid var(--color-accent)",
+                          boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                          opacity: 0.95,
+                          transform: "rotate(2deg)",
+                        }}
+                      />
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -862,9 +882,47 @@ Waymark
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
-              {photos.map((p) => (
-                <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} isCover={coverPhotoId === p.id} onToggleCover={toggleCover} />
-              ))}
+              <SortablePhotoList
+                photos={photos}
+                onReorder={setPhotos}
+                disabled={quickGenerating}
+                strategy="vertical"
+                renderItem={(p, i, total, handleProps) => (
+                  <PhotoStyleRow
+                    photo={p}
+                    onUpdate={updatePhoto}
+                    title={tripTitle}
+                    brief={tripBrief}
+                    wordStyle={ws}
+                    dateDisplay={dateDisplay}
+                    isCover={coverPhotoId === p.id}
+                    onToggleCover={toggleCover}
+                    dragHandleProps={handleProps}
+                    index={i}
+                    total={total}
+                  />
+                )}
+                renderOverlay={(p) => (
+                  <div
+                    className="bg-card"
+                    style={{
+                      border: "2px solid var(--color-accent)",
+                      borderRadius: 5,
+                      padding: 12,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                      opacity: 0.95,
+                      transform: "rotate(1.5deg)",
+                      display: "inline-block",
+                    }}
+                  >
+                    <img
+                      src={p.src}
+                      alt=""
+                      style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 3 }}
+                    />
+                  </div>
+                )}
+              />
             </div>
 
             <div className="flex justify-between" style={{ marginTop: 36 }}>
@@ -973,23 +1031,48 @@ Waymark
           />
 
           <div className="grid gap-2.5" style={{ marginTop: 12 }}>
-            {photos.map((p, i) => (
-              <PhotoCard
-                key={p.id}
-                photo={p}
-                index={i}
-                total={photos.length}
-                onUpdate={updatePhoto}
-                onMove={movePhoto}
-                onRemove={removePhoto}
-                title={tripTitle}
-                brief={tripBrief}
-                wordStyle={ws}
-                dateDisplay={dateDisplay}
-                isCover={coverPhotoId === p.id}
-                onToggleCover={toggleCover}
-              />
-            ))}
+            <SortablePhotoList
+              photos={photos}
+              onReorder={setPhotos}
+              disabled={quickGenerating}
+              strategy="vertical"
+              renderItem={(p, i, total, handleProps) => (
+                <PhotoCard
+                  photo={p}
+                  index={i}
+                  total={total}
+                  onUpdate={updatePhoto}
+                  onRemove={removePhoto}
+                  title={tripTitle}
+                  brief={tripBrief}
+                  wordStyle={ws}
+                  dateDisplay={dateDisplay}
+                  isCover={coverPhotoId === p.id}
+                  onToggleCover={toggleCover}
+                  dragHandleProps={handleProps}
+                />
+              )}
+              renderOverlay={(p) => (
+                <div
+                  className="bg-card"
+                  style={{
+                    border: "2px solid var(--color-accent)",
+                    borderRadius: 5,
+                    padding: 12,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                    opacity: 0.95,
+                    transform: "rotate(1.5deg)",
+                    display: "inline-block",
+                  }}
+                >
+                  <img
+                    src={p.src}
+                    alt=""
+                    style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 3 }}
+                  />
+                </div>
+              )}
+            />
           </div>
 
           <div className="flex justify-between" style={{ marginTop: 36 }}>
@@ -1096,9 +1179,47 @@ Waymark
           <div style={{ marginTop: 8 }} />
 
           <div className="grid gap-2" style={{ marginBottom: 8 }}>
-            {photos.map((p) => (
-              <PhotoStyleRow key={p.id} photo={p} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} dateDisplay={dateDisplay} isCover={coverPhotoId === p.id} onToggleCover={toggleCover} />
-            ))}
+            <SortablePhotoList
+              photos={photos}
+              onReorder={setPhotos}
+              disabled={quickGenerating}
+              strategy="vertical"
+              renderItem={(p, i, total, handleProps) => (
+                <PhotoStyleRow
+                  photo={p}
+                  onUpdate={updatePhoto}
+                  title={tripTitle}
+                  brief={tripBrief}
+                  wordStyle={ws}
+                  dateDisplay={dateDisplay}
+                  isCover={coverPhotoId === p.id}
+                  onToggleCover={toggleCover}
+                  dragHandleProps={handleProps}
+                  index={i}
+                  total={total}
+                />
+              )}
+              renderOverlay={(p) => (
+                <div
+                  className="bg-card"
+                  style={{
+                    border: "2px solid var(--color-accent)",
+                    borderRadius: 5,
+                    padding: 12,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
+                    opacity: 0.95,
+                    transform: "rotate(1.5deg)",
+                    display: "inline-block",
+                  }}
+                >
+                  <img
+                    src={p.src}
+                    alt=""
+                    style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 3 }}
+                  />
+                </div>
+              )}
+            />
           </div>
 
           <div className="flex justify-between" style={{ marginTop: 36 }}>
