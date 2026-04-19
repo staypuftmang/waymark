@@ -307,9 +307,13 @@ body {
   scroll-snap-align: start;
 }
 
-/* ── Global overflow safety net ── */
+/* ── Global overflow safety net ──
+   `overflow-x: clip` (not `hidden`) is important: `hidden` would make
+   html/body a scroll container, which would break `position: sticky`
+   on descendant headers. `clip` prevents horizontal overflow without
+   establishing a new scroll container. */
 html, body {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ── Download dropdown — keep inside viewport on mobile ── */
