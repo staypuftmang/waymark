@@ -369,30 +369,32 @@ export default function JournalPreview({
 
         <LayoutComponent photos={photos} vs={vs} vk={vk} onPhotoClick={openLightbox} />
 
-        <div
-          style={{
-            textAlign: "center",
-            marginTop: 56,
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: 3,
-            opacity: 0.2,
-          }}
-        >
-          &#x2014; fin &#x2014;
-        </div>
+        <div data-export-footer>
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 56,
+              fontSize: 9,
+              textTransform: "uppercase",
+              letterSpacing: 3,
+              opacity: 0.2,
+            }}
+          >
+            &#x2014; fin &#x2014;
+          </div>
 
-        {/* Export footer — visible in captures */}
-        <div
-          style={{
-            textAlign: "center",
-            marginTop: 40,
-            fontFamily: vs.fontCaption,
-            fontSize: 11,
-            opacity: 0.3,
-          }}
-        >
-          Made with Waymark &middot; mywaymarks.com
+          {/* Export footer — visible in captures */}
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 40,
+              fontFamily: vs.fontCaption,
+              fontSize: 11,
+              opacity: 0.3,
+            }}
+          >
+            Made with Waymark &middot; mywaymarks.com
+          </div>
         </div>
       </div>
 
