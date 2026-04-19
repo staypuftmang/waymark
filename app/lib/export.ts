@@ -142,8 +142,13 @@ export async function exportPDF(
     const pdfWidth = 595.28;
     const pdfHeight = 841.89;
     const margin = 28;
+    // Hard safety margin at the bottom of every page — nothing may be placed
+    // below this line. Larger than the top/side margin because text baselines
+    // and html2canvas descenders can bleed past the computed bounding box.
+    const bottomSafety = 40;
+    const usableBottom = pdfHeight - bottomSafety;
     const contentWidth = pdfWidth - margin * 2;
-    const contentHeight = pdfHeight - margin * 2;
+    const contentHeight = usableBottom - margin;
     const entryGap = 20;
 
     const pdf = new jsPDF("p", "pt", "a4");
@@ -176,7 +181,7 @@ export async function exportPDF(
         w *= s;
       }
 
-      const spaceLeft = pdfHeight - margin - yCursor;
+      const spaceLeft = usableBottom - yCursor;
       if (opts.forceNewPage || h > spaceLeft) primeNewPage();
 
       const x = margin + (contentWidth - w) / 2;
@@ -215,7 +220,9 @@ export async function exportPDF(
         fw *= s;
       }
 
-      const fitsOnCurrentPage = yCursor + fh <= pdfHeight - margin;
+      // All-or-nothing: the whole FIN + footer block must fit above the
+      // bottomSafety line, or it gets its own final page.
+      const fitsOnCurrentPage = yCursor + fh <= usableBottom;
       if (!fitsOnCurrentPage) primeNewPage();
 
       const fx = margin + (contentWidth - fw) / 2;
