@@ -237,7 +237,8 @@ export default function PhotoStyleRow({
                 <textarea
                   value={(p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string) || ""}
                   onChange={(e) => up(p.id, p[aiField as keyof Photo] ? aiField : field, e.target.value)}
-                  style={{ ...fieldStyle, resize: "vertical", minHeight: 56, lineHeight: 1.5 }}
+                  rows={5}
+                  style={{ ...fieldStyle, resize: "vertical", minHeight: 120, lineHeight: 1.5 }}
                   placeholder={`Add ${label}...`}
                 />
               ) : (

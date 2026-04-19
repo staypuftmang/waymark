@@ -249,8 +249,8 @@ export default function PhotoCard({
                 value={p.paragraph || ""}
                 onChange={(e) => up(p.id, "paragraph", e.target.value)}
                 onInput={(e) => autosize(e.currentTarget)}
-                rows={4}
-                style={{ ...textareaStyle, minHeight: 90, lineHeight: 1.6 }}
+                rows={5}
+                style={{ ...textareaStyle, minHeight: 120, lineHeight: 1.6 }}
               />
               <AiSuggestion
                 text={p.aiParagraph}
