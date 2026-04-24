@@ -12,19 +12,13 @@ function sanitizeFilename(name: string): string {
 function prepareForCapture(element: HTMLElement) {
   const originals: Array<() => void> = [];
 
-  const topBar = element.querySelector("[data-export-hide='top']") as HTMLElement | null;
-  if (topBar) {
-    const orig = topBar.style.display;
-    topBar.style.display = "none";
-    originals.push(() => { topBar.style.display = orig; });
-  }
-
-  const refineBtn = element.querySelector("[data-export-hide='refine']") as HTMLElement | null;
-  if (refineBtn) {
-    const orig = refineBtn.style.display;
-    refineBtn.style.display = "none";
-    originals.push(() => { refineBtn.style.display = orig; });
-  }
+  // Hide every [data-export-hide] element during capture, regardless of its
+  // value ("top", "refine", "links", …). Keeps the capture logic generic.
+  element.querySelectorAll<HTMLElement>("[data-export-hide]").forEach((node) => {
+    const orig = node.style.display;
+    node.style.display = "none";
+    originals.push(() => { node.style.display = orig; });
+  });
 
   // Cover: shrink the outer wrapper to match the hero image's max-width, and
   // drop horizontal padding. Otherwise the wrapper captures at viewport width

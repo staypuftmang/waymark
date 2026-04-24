@@ -18,6 +18,7 @@ import JournalPreview from "@/app/components/JournalPreview";
 import HelperText from "@/app/components/HelperText";
 import CoverEditor from "@/app/components/CoverEditor";
 import SortablePhotoList from "@/app/components/SortablePhotoList";
+import SiteFooter from "@/app/components/SiteFooter";
 
 /* ── Shared inline styles ── */
 const iStyle: React.CSSProperties = {
@@ -1364,6 +1365,9 @@ Waymark
           </div>
         </div>
       )}
+
+      {/* Site footer — Privacy · Terms. JournalPreview owns its own footer. */}
+      {step !== 99 && <SiteFooter />}
 
       {/* ═══════════════ JOURNAL PREVIEW ═══════════════ */}
       {step === 99 && (
