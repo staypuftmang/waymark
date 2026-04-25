@@ -22,6 +22,7 @@ import SiteFooter from "@/app/components/SiteFooter";
 import AuthModal from "@/app/components/AuthModal";
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
+import SignupPromptPanel from "@/app/components/SignupPromptPanel";
 import { useAuth } from "@/app/lib/AuthContext";
 import {
   saveJournalMetadata,
@@ -266,6 +267,14 @@ export default function Page() {
   const [journalsLoaded, setJournalsLoaded] = useState(false);
   const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
   const [newJournalPickerOpen, setNewJournalPickerOpen] = useState(false);
+
+  // Email-capture prompt: shown once per session when a signed-out Quick
+  // Create user reaches the preview with AI content. signupPromptDoneRef
+  // prevents it from re-appearing after dismiss/sign-up or after the user
+  // navigates back to edit and returns.
+  const [signupPromptVisible, setSignupPromptVisible] = useState(false);
+  const signupPromptDoneRef = useRef(false);
+  const signupPromptWasOpenRef = useRef(false);
   const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedUserIdRef = useRef<string | null>(null);
@@ -481,6 +490,37 @@ export default function Page() {
     currentJournalId,
     quickGenerating,
   ]);
+
+  // ── Email capture: show the signup panel exactly once per session when a
+  //    signed-out Quick Create user lands on the preview with AI content. ──
+  useEffect(() => {
+    const hasAi = photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
+    const shouldShow =
+      step === 99 &&
+      mode === "quick" &&
+      !user &&
+      hasAi &&
+      !signupPromptDoneRef.current;
+    if (shouldShow) {
+      setSignupPromptVisible(true);
+      signupPromptDoneRef.current = true;
+      signupPromptWasOpenRef.current = true;
+      track("signup_prompt_shown", { trigger: "preview_load" });
+    }
+  }, [step, mode, user, photos]);
+
+  // After signup completes while the panel was open, dismiss the panel and
+  // surface a confirmation toast. The auto-save effect handles the actual
+  // Supabase write — we just react to the user transition.
+  useEffect(() => {
+    if (user && signupPromptWasOpenRef.current) {
+      setSignupPromptVisible(false);
+      signupPromptWasOpenRef.current = false;
+      setToast("Journal saved to your account \u2713");
+      setTimeout(() => setToast(null), 4000);
+      track("signup_from_prompt", { trigger: "preview_load" });
+    }
+  }, [user]);
 
   // ── Load saved state on mount + register fallback + rate-limit listeners ──
   useEffect(() => {
@@ -943,6 +983,19 @@ export default function Page() {
         initialMode={authModalMode}
         onClose={() => setAuthModalOpen(false)}
         onAuthed={() => { /* AuthProvider's onAuthStateChange picks it up */ }}
+      />
+
+      <SignupPromptPanel
+        open={signupPromptVisible}
+        onSignUp={() => {
+          track("signup_prompt_clicked", { trigger: "preview_load" });
+          openSignUp();
+        }}
+        onDismiss={() => {
+          setSignupPromptVisible(false);
+          signupPromptWasOpenRef.current = false;
+          track("signup_prompt_dismissed", { trigger: "preview_load" });
+        }}
       />
 
       {/* ═══════════════ NEW JOURNAL MODE PICKER ═══════════════ */}

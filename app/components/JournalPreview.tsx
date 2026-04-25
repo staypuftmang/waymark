@@ -9,6 +9,7 @@ import { LayoutMap } from "./layouts";
 import RefinePanel from "./RefinePanel";
 import Lightbox from "./Lightbox";
 import HeaderAuthControls from "./HeaderAuthControls";
+import { useAuth } from "@/app/lib/AuthContext";
 
 interface JournalPreviewProps {
   tripTitle: string;
@@ -47,6 +48,7 @@ export default function JournalPreview({
   onSignUpClick,
   onYourJournals,
 }: JournalPreviewProps) {
+  const { user } = useAuth();
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
   const coverPhoto = coverPhotoId !== null ? photos.find((p) => p.id === coverPhotoId) : null;
@@ -195,6 +197,29 @@ export default function JournalPreview({
                 >
                   Save Image
                 </button>
+                {!user && onSignUpClick && (
+                  <button
+                    onClick={() => {
+                      setDownloadOpen(false);
+                      track("signup_prompt_clicked", { trigger: "download_dropdown" });
+                      onSignUpClick();
+                    }}
+                    className="w-full text-left bg-transparent border-none cursor-pointer"
+                    style={{
+                      padding: "10px 14px",
+                      fontSize: 11,
+                      color: vs.fg,
+                      opacity: 0.75,
+                      fontFamily: "var(--font-body)",
+                      lineHeight: 1.5,
+                      borderTop: `1px solid ${vs.fg}11`,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = `${vs.fg}08`; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    Sign up to save this journal and access it from any device.
+                  </button>
+                )}
               </div>
             )}
           </div>
