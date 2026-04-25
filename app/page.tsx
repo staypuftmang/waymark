@@ -23,7 +23,9 @@ import AuthModal from "@/app/components/AuthModal";
 import JournalCard from "@/app/components/JournalCard";
 import { useAuth } from "@/app/lib/AuthContext";
 import {
-  saveJournal as saveJournalRemote,
+  saveJournalMetadata,
+  syncJournalPhotos,
+  updatePhotoFields,
   loadJournal as loadJournalRemote,
   listJournals as listJournalsRemote,
   deleteJournal as deleteJournalRemote,
@@ -31,6 +33,7 @@ import {
   renameJournal as renameJournalRemote,
   isEmptyJournal,
   type JournalSummary,
+  type PhotoTextFields,
 } from "@/app/lib/journalStorage";
 
 /* ── Shared inline styles ── */
@@ -380,6 +383,15 @@ export default function Page() {
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedUserIdRef = useRef<string | null>(null);
 
+  // Diff-based photo save state. lastSavedPhotosRef is the snapshot of the
+  // photos array at the end of the last successful save — the save effect
+  // diffs against it to decide between a full wholesale sync and targeted
+  // per-row UPDATEs. remoteIdMapRef maps client-side numeric photo ids to
+  // the DB UUIDs so we can target individual rows.
+  const lastSavedPhotosRef = useRef<Photo[] | null>(null);
+  const lastSavedCoverIdRef = useRef<number | string | null>(null);
+  const remoteIdMapRef = useRef<Record<number, string>>({});
+
   const openSignIn = useCallback(() => { setAuthModalMode("signin"); setAuthModalOpen(true); }, []);
   const openSignUp = useCallback(() => { setAuthModalMode("signup"); setAuthModalOpen(true); }, []);
 
@@ -454,12 +466,15 @@ export default function Page() {
 
   useEffect(() => { refreshJournals(); }, [refreshJournals]);
 
-  // Reset currentJournalId when the signed-in user changes (or signs out)
+  // Reset currentJournalId + diff refs when the signed-in user changes
   useEffect(() => {
     const uid = user?.id ?? null;
     if (lastSavedUserIdRef.current !== uid) {
       lastSavedUserIdRef.current = uid;
       setCurrentJournalId(null);
+      lastSavedPhotosRef.current = null;
+      lastSavedCoverIdRef.current = null;
+      remoteIdMapRef.current = {};
     }
   }, [user]);
 
@@ -490,8 +505,67 @@ export default function Page() {
     setSaveStatus("saving");
     cloudSaveTimer.current = setTimeout(async () => {
       try {
-        const id = await saveJournalRemote(user.id, data);
-        if (!currentJournalId) setCurrentJournalId(id);
+        // 1. Always save lightweight metadata (title, dates, brief, style, layout,
+        //    cover title/subtitle). Tiny payload, no base64.
+        const journalId = await saveJournalMetadata(user.id, currentJournalId, data);
+        if (!currentJournalId) setCurrentJournalId(journalId);
+
+        // 2. Decide between a wholesale photos sync and per-row text updates.
+        const last = lastSavedPhotosRef.current;
+        const coverChanged = lastSavedCoverIdRef.current !== data.coverPhotoId;
+        const structuralChange =
+          !last ||
+          coverChanged ||
+          last.length !== data.photos.length ||
+          data.photos.some((p, i) => last[i]?.id !== p.id);
+
+        if (structuralChange) {
+          // Photos were added, removed, reordered, or cover reassigned —
+          // delete + reinsert the full set. First save of a new journal also
+          // lands here (last === null).
+          const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
+          remoteIdMapRef.current = map;
+        } else {
+          // Same photos in the same order — only text/flag fields could have
+          // changed. Issue a targeted UPDATE per dirty row. No base64 touched.
+          const dirty: Array<[number, PhotoTextFields]> = [];
+          for (let i = 0; i < data.photos.length; i++) {
+            const curr = data.photos[i];
+            const prev = last![i];
+            const fields: PhotoTextFields = {};
+            if (curr.caption !== prev.caption) fields.caption = curr.caption || "";
+            if (curr.notes !== prev.notes) fields.notes = curr.notes || "";
+            if (curr.paragraph !== prev.paragraph) fields.paragraph = curr.paragraph || "";
+            if (curr.aiCaption !== prev.aiCaption) fields.ai_caption = curr.aiCaption || "";
+            if (curr.aiNotes !== prev.aiNotes) fields.ai_notes = curr.aiNotes || "";
+            if (curr.aiParagraph !== prev.aiParagraph) fields.ai_paragraph = curr.aiParagraph || "";
+            if (Object.keys(fields).length > 0) dirty.push([curr.id, fields]);
+          }
+          if (dirty.length > 0) {
+            const results = await Promise.allSettled(
+              dirty.map(([clientId, fields]) => {
+                const remoteId = remoteIdMapRef.current[clientId];
+                if (!remoteId) return Promise.reject(new Error("missing remote id"));
+                return updatePhotoFields(remoteId, fields);
+              }),
+            );
+            const anyMissingRemote = results.some(
+              (r) => r.status === "rejected" && String(r.reason?.message).includes("missing remote id"),
+            );
+            if (anyMissingRemote) {
+              // Fall back to a wholesale sync to re-establish remote ids.
+              const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
+              remoteIdMapRef.current = map;
+            } else {
+              const firstFailure = results.find((r) => r.status === "rejected");
+              if (firstFailure && firstFailure.status === "rejected") throw firstFailure.reason;
+            }
+          }
+        }
+
+        lastSavedPhotosRef.current = data.photos;
+        lastSavedCoverIdRef.current = data.coverPhotoId;
+
         setSaveStatus("saved");
         if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
         savedFlashTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
@@ -733,12 +807,16 @@ export default function Page() {
     setCoverSubtitle("");
     setCoverTitleEdited(false);
     setCurrentJournalId(null);
+    lastSavedPhotosRef.current = null;
+    lastSavedCoverIdRef.current = null;
+    remoteIdMapRef.current = {};
   };
 
   // ── Journal management actions ──
   const openJournalById = useCallback(async (id: string) => {
     try {
-      const data = await loadJournalRemote(id);
+      const loaded = await loadJournalRemote(id);
+      const data = loaded.data;
       // Hydrate state
       setTripTitle(data.tripTitle);
       setTripBrief(data.tripBrief);
@@ -753,6 +831,11 @@ export default function Page() {
       setCoverSubtitle(data.coverSubtitle);
       setCoverTitleEdited(data.coverTitleEdited);
       setCurrentJournalId(data.id);
+      // Prime diff refs so the first auto-save after open doesn't look
+      // structural (same photos in the same order as what the DB already has).
+      lastSavedPhotosRef.current = data.photos;
+      lastSavedCoverIdRef.current = data.coverPhotoId;
+      remoteIdMapRef.current = loaded.photoRemoteIds;
       // Open in preview by default — user can click Edit to go to builder
       const hasAi = data.photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
       setMode(hasAi ? "quick" : "full");
