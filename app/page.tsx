@@ -250,7 +250,7 @@ function Header({
   return (
     <div
       className="sticky top-0 z-[100] flex items-center justify-between"
-      style={{ background: "var(--color-ink)", padding: "16px 24px" }}
+      style={{ background: "var(--color-ink)", padding: "16px 24px", position: "sticky", top: 0 }}
     >
       <div className="flex items-center" style={{ gap: 14 }}>
         <button
@@ -270,6 +270,19 @@ function Header({
         </button>
         {saveStatus && <SaveIndicator status={saveStatus} />}
       </div>
+      {children && (
+        <div
+          className="absolute"
+          style={{
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "auto",
+          }}
+        >
+          {children}
+        </div>
+      )}
       <div className="flex items-center" style={{ gap: 8 }}>
         {history && <UndoRedoButtons {...history} />}
         {right || null}
@@ -281,7 +294,6 @@ function Header({
           />
         )}
       </div>
-      {children || null}
     </div>
   );
 }
@@ -1714,21 +1726,56 @@ export default function Page() {
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
         <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
-          <div className="flex gap-0.5">
-            {[0, 1, 2].map((s) => (
-              <div
-                key={s}
-                className="cursor-pointer"
-                style={{
-                  width: s === step ? 36 : 24,
-                  height: 3,
-                  borderRadius: 1,
-                  background: s === step ? "var(--color-paper)" : s < step ? "var(--color-accent)" : "#333",
-                  transition: "all .3s",
-                }}
-                onClick={() => s <= step && setStep(s)}
-              />
-            ))}
+          <div className="wm-fb-tabs flex items-center">
+            {[
+              { step: 0, label: "Your Trip", short: "Trip" },
+              { step: 1, label: "Photos & Notes", short: "Photos" },
+              { step: 2, label: "Style & Layout", short: "Style" },
+            ].map((s, i, arr) => {
+              const isCurrent = s.step === step;
+              const isPast = s.step < step;
+              const clickable = s.step <= step;
+              return (
+                <div key={s.step} className="flex items-center">
+                  <button
+                    onClick={() => clickable && setStep(s.step)}
+                    disabled={!clickable}
+                    className="bg-transparent border-none font-body"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: isCurrent ? 700 : 500,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      color: isCurrent
+                        ? "var(--color-paper)"
+                        : isPast
+                          ? "var(--color-accent)"
+                          : "rgba(247,245,240,0.35)",
+                      cursor: clickable ? "pointer" : "default",
+                      padding: "4px 2px",
+                      whiteSpace: "nowrap",
+                      transition: "color .2s",
+                    }}
+                    aria-current={isCurrent ? "step" : undefined}
+                  >
+                    <span className="wm-fb-tab-long">{s.label}</span>
+                    <span className="wm-fb-tab-short">{s.short}</span>
+                  </button>
+                  {i < arr.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        margin: "0 10px",
+                        color: "rgba(247,245,240,0.25)",
+                        fontSize: 10,
+                      }}
+                    >
+                      &middot;
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Header>
       )}

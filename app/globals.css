@@ -373,6 +373,14 @@ html, body {
   }
 }
 
+/* ── Full Builder progress tabs: long labels on desktop, short on phones ── */
+.wm-fb-tab-short { display: none; }
+.wm-fb-tab-long { display: inline; }
+@media (max-width: 560px) {
+  .wm-fb-tab-long { display: none; }
+  .wm-fb-tab-short { display: inline; }
+}
+
 /* ── Touch targets on mobile ──
    Bump pill/chip heights so they meet the 44px guideline, without
    destroying density on desktop. */
