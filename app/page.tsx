@@ -246,7 +246,6 @@ export default function Page() {
   const [appReady, setAppReady] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
-  const [showPhotoLimitWarning, setShowPhotoLimitWarning] = useState<{ files: File[]; count: number } | null>(null);
   // Cover photo state
   const [coverPhotoId, setCoverPhotoId] = useState<number | null>(null);
   const [coverTitle, setCoverTitle] = useState<string>("");
@@ -631,19 +630,21 @@ export default function Page() {
 
     setUploadErrors([]);
 
-    // Hard warning at 30+ total photos
-    if (files.length + photos.length > 30) {
-      setShowPhotoLimitWarning({ files, count: files.length + photos.length });
-      return;
+    // Hard cap at 30. Drop any files that would push us over and inform the
+    // user via the upload-zone message — no modal interruption.
+    const remaining = Math.max(0, 30 - photos.length);
+    if (remaining === 0) {
+      return; // upload zone is disabled in this state, but defend regardless
+    }
+    const accepted = files.slice(0, remaining);
+    if (files.length > remaining) {
+      setUploadErrors((prev) => [
+        ...prev,
+        `${files.length - remaining} file${files.length - remaining > 1 ? "s" : ""} skipped (30-photo max reached)`,
+      ]);
     }
 
-    // Soft warning at 20+
-    if (files.length + photos.length > 20) {
-      setToast("For best results, we recommend 20 photos or fewer.");
-      setTimeout(() => setToast(null), 5000);
-    }
-
-    processFiles(files);
+    processFiles(accepted);
   }, [photos.length, processFiles]);
 
   const updatePhoto = (id: number, field: string, value: string) =>
@@ -800,12 +801,26 @@ export default function Page() {
   // reviewed AI content unless the user explicitly hits Rewrite All.
   const hasAnyAi = photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
 
+  // Cancel signal for the in-progress AI batch. Set true by the overlay's
+  // Cancel button; the loop in generateMissingAi reads it between iterations
+  // and bails early. Reset to false at the start of each new run.
+  const cancelGenerationRef = useRef(false);
+  const [cancelDisabled, setCancelDisabled] = useState(false);
+
+  const cancelGeneration = useCallback(() => {
+    if (cancelDisabled) return;
+    cancelGenerationRef.current = true;
+    setCancelDisabled(true);
+    setTimeout(() => setCancelDisabled(false), 800);
+  }, [cancelDisabled]);
+
   // Generate AI for photos missing AI content. Returns the updated photos
   // array so callers can decide where to route next.
   const generateMissingAi = async (mode: "quick" | "full") => {
     const missing = photos.filter((p) => !(p.aiCaption || p.aiNotes || p.aiParagraph));
-    if (missing.length === 0) return { generated: 0 };
+    if (missing.length === 0) return { generated: 0, cancelled: false };
 
+    cancelGenerationRef.current = false;
     setQuickGenerating(true);
     setGenProgress({ current: 0, total: missing.length });
     track("ai_generated", { mode, photoCount: missing.length, wordStyle: ws, visualStyle: vk });
@@ -816,7 +831,9 @@ export default function Page() {
       .map((p) => p.aiCaption)
       .filter((c): c is string => !!c);
 
+    let processed = 0;
     for (let i = 0; i < missing.length; i++) {
+      if (cancelGenerationRef.current) break;
       setGenProgress({ current: i + 1, total: missing.length });
       const p = missing[i];
       const fullIdx = photos.findIndex((ph) => ph.id === p.id);
@@ -827,6 +844,9 @@ export default function Page() {
         previousCaptions,
       );
       const raw = await aiCall(prompt, p.src);
+      // Re-check after the await — the user may have hit Cancel while the
+      // request was in flight. Don't apply a result we no longer want.
+      if (cancelGenerationRef.current) break;
       if (raw) {
         try {
           const obj = JSON.parse(cleanJson(raw));
@@ -837,17 +857,24 @@ export default function Page() {
           console.error(e);
         }
       }
+      processed++;
     }
+    const cancelled = cancelGenerationRef.current;
+    cancelGenerationRef.current = false;
     setQuickGenerating(false);
     setGenProgress(null);
-    return { generated: missing.length };
+    return { generated: processed, cancelled };
   };
 
   const quickGenerate = async () => {
     const result = await generateMissingAi("quick");
-    // Fresh journey (no AI before): land on the Quick Review step.
-    // Update journey (returning): skip review and go straight to preview.
-    setStep(hasAnyAi || result.generated === 0 ? 99 : 10);
+    // Cancelled mid-run, or returning user with prior AI: go to preview.
+    // Fresh full run: drop into Quick Review (step 10) for the user to scan.
+    if (result.cancelled || hasAnyAi || result.generated === 0) {
+      setStep(99);
+    } else {
+      setStep(10);
+    }
   };
 
   const fullBuilderAdvance = async () => {
@@ -884,6 +911,13 @@ export default function Page() {
     cursor: "pointer",
     background: "var(--color-card)",
   };
+
+  const photoCount = photos.length;
+  const atHardCap = photoCount >= 30;
+  const atSoftCap = photoCount >= 20 && !atHardCap;
+  const dropStyleEffective: React.CSSProperties = atHardCap
+    ? { ...dropStyle, opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }
+    : dropStyle;
   const chipClass = "wm-chip";
   const chip = (sel: boolean): React.CSSProperties => ({
     padding: "4px 10px",
@@ -1025,23 +1059,6 @@ export default function Page() {
         </div>
       )}
 
-      {/* ═══════════════ PHOTO LIMIT WARNING ═══════════════ */}
-      {showPhotoLimitWarning && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              That's a lot of photos
-            </div>
-            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              Uploading {showPhotoLimitWarning.count} photos may cause performance issues. We recommend selecting your 15–20 best photos for the best journal.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => setShowPhotoLimitWarning(null)} style={{ ...btnSecondary, fontSize: 13 }}>Select fewer</button>
-              <button onClick={() => { processFiles(showPhotoLimitWarning.files); setShowPhotoLimitWarning(null); }} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Continue anyway</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ═══════════════ UPLOAD PROGRESS ═══════════════ */}
       {uploadProgress.active && (
@@ -1086,6 +1103,25 @@ export default function Page() {
             <div className="text-warm" style={{ fontSize: 11, marginTop: 12 }}>
               This may take a moment per photo
             </div>
+            <button
+              onClick={cancelGeneration}
+              disabled={cancelDisabled}
+              className="font-body cursor-pointer"
+              style={{
+                marginTop: 18,
+                background: "transparent",
+                color: "var(--color-ink)",
+                border: "1px solid var(--color-ink)",
+                borderRadius: 3,
+                padding: "8px 16px",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: cancelDisabled ? "wait" : "pointer",
+                opacity: cancelDisabled ? 0.5 : 1,
+              }}
+            >
+              Cancel generation
+            </button>
           </div>
         </div>
       )}
@@ -1338,12 +1374,23 @@ export default function Page() {
               <HelperText>The AI uses this as inspiration to write unique content for each photo. This text also appears as the opening paragraph of your journal.</HelperText>
             </div>
 
-            <div style={dropStyle} onClick={() => quickRef.current?.click()}>
+            <div
+              style={dropStyleEffective}
+              onClick={() => { if (!atHardCap) quickRef.current?.click(); }}
+              aria-disabled={atHardCap}
+            >
               <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
               <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
               <HelperText>Best with 5–20 photos. Add the moments that mattered most.</HelperText>
-              <input ref={quickRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} />
+              <input ref={quickRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
             </div>
+            {(atSoftCap || atHardCap) && (
+              <div className="text-stone" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
+                {atHardCap
+                  ? "Maximum of 30 photos per journal reached. Remove photos to upload more."
+                  : "For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate."}
+              </div>
+            )}
 
             {photos.length > 0 && (
               <div style={{ marginTop: 12 }}>
@@ -1709,12 +1756,23 @@ export default function Page() {
           <h2 style={h2Style}>Photos & Notes</h2>
           <p style={subStyle}>Upload photos, write captions and notes.</p>
 
-          <div style={dropStyle} onClick={() => fullRef.current?.click()}>
+          <div
+            style={dropStyleEffective}
+            onClick={() => { if (!atHardCap) fullRef.current?.click(); }}
+            aria-disabled={atHardCap}
+          >
             <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
             <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
             <HelperText>Best with 5–20 photos.</HelperText>
-            <input ref={fullRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} />
+            <input ref={fullRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
           </div>
+          {(atSoftCap || atHardCap) && (
+            <div className="text-stone" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
+              {atHardCap
+                ? "Maximum of 30 photos per journal reached. Remove photos to upload more."
+                : "For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate."}
+            </div>
+          )}
 
           {photos.length > 0 && (
             <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12, marginBottom: 12 }}>

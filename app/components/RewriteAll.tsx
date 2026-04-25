@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { track } from "@vercel/analytics";
 import { Photo, WordStyleKey, VisualStyleKey } from "@/app/lib/types";
 import { cleanJson } from "@/app/lib/constants";
@@ -28,8 +28,18 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
   const save = () => onSaveHistory?.();
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
+  const cancelRef = useRef(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+
+  const cancel = () => {
+    if (cancelBusy) return;
+    cancelRef.current = true;
+    setCancelBusy(true);
+    setTimeout(() => setCancelBusy(false), 800);
+  };
 
   const run = async () => {
+    cancelRef.current = false;
     setLoading(true);
     const eligibleCount = photos.filter((p) => p.caption || p.notes || p.aiCaption || p.aiNotes).length;
     track("ai_generated", { mode: "rewrite_all", photoCount: eligibleCount, wordStyle: ws, visualStyle: vk });
@@ -37,6 +47,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
     const previousOutputs: string[] = [];
 
     for (const p of photos) {
+      if (cancelRef.current) break;
       const capText = p.aiCaption || p.caption;
       const notesText = p.aiNotes || p.notes;
       if (!capText && !notesText) continue;
@@ -44,6 +55,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
       const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
 
       const raw = await aiCall(prompt, p.src);
+      if (cancelRef.current) break;
       if (raw) {
         try {
           const parsed = JSON.parse(cleanJson(raw));
@@ -54,7 +66,10 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
         }
       }
     }
-    setStaged(res);
+    cancelRef.current = false;
+    // Surface whatever we collected (even partial) so the user can review it.
+    // If nothing was collected (cancelled instantly), skip the staging modal.
+    setStaged(Object.keys(res).length > 0 ? res : null);
     setLoading(false);
   };
 
@@ -122,19 +137,41 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
 
   return (
     <>
-      <button
-        onClick={run}
-        disabled={loading || !has || !!staged}
-        style={{
-          ...btnAccent,
-          fontSize: 12,
-          padding: "7px 14px",
-          opacity: loading || !!staged ? 0.5 : 1,
-          cursor: loading || !has || !!staged ? "not-allowed" : "pointer",
-        }}
-      >
-        {loading ? "\u2026 Generating" : "\u2726 Rewrite All"}
-      </button>
+      <div className="inline-flex items-center" style={{ gap: 8 }}>
+        <button
+          onClick={run}
+          disabled={loading || !has || !!staged}
+          style={{
+            ...btnAccent,
+            fontSize: 12,
+            padding: "7px 14px",
+            opacity: loading || !!staged ? 0.5 : 1,
+            cursor: loading || !has || !!staged ? "not-allowed" : "pointer",
+          }}
+        >
+          {loading ? "\u2026 Generating" : "\u2726 Rewrite All"}
+        </button>
+        {loading && (
+          <button
+            onClick={cancel}
+            disabled={cancelBusy}
+            className="font-body cursor-pointer"
+            style={{
+              background: "transparent",
+              color: "var(--color-ink)",
+              border: "1px solid var(--color-ink)",
+              borderRadius: 3,
+              padding: "7px 12px",
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: cancelBusy ? "wait" : "pointer",
+              opacity: cancelBusy ? 0.5 : 1,
+            }}
+          >
+            Cancel generation
+          </button>
+        )}
+      </div>
 
       {staged && (
         <div
