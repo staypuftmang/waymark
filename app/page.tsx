@@ -714,10 +714,16 @@ export default function Page() {
   const validImageTypes = ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp"];
 
   const processFiles = useCallback(async (files: File[]) => {
-    const validFiles = files.filter((f) => validImageTypes.includes(f.type));
-    const invalidCount = files.length - validFiles.length;
+    const MAX_PHOTO_BYTES = 25 * 1024 * 1024; // 25 MB pre-compress cap
+    const typeOk = files.filter((f) => validImageTypes.includes(f.type));
+    const invalidCount = files.length - typeOk.length;
     if (invalidCount > 0) {
       setUploadErrors((prev) => [...prev, `${invalidCount} file${invalidCount > 1 ? "s" : ""} skipped (not images)`]);
+    }
+    const validFiles = typeOk.filter((f) => f.size <= MAX_PHOTO_BYTES);
+    const oversizedCount = typeOk.length - validFiles.length;
+    if (oversizedCount > 0) {
+      setUploadErrors((prev) => [...prev, `${oversizedCount} file${oversizedCount > 1 ? "s" : ""} skipped (over 25 MB)`]);
     }
 
     setUploadProgress({ active: true, current: 0, total: validFiles.length });
@@ -875,15 +881,16 @@ export default function Page() {
   }, [clearHistory]);
 
   const renameJournalById = useCallback(async (id: string, title: string) => {
+    if (!user) return;
     try {
-      await renameJournalRemote(id, title);
+      await renameJournalRemote(user.id, id, title);
       // If the currently open journal is the one being renamed, sync local state
       if (currentJournalId === id) setTripTitle(title);
       refreshJournals();
     } catch (err) {
       console.error("Rename failed:", err);
     }
-  }, [currentJournalId, refreshJournals]);
+  }, [user, currentJournalId, refreshJournals]);
 
   const duplicateJournalById = useCallback(async (id: string) => {
     if (!user) return;
@@ -896,8 +903,9 @@ export default function Page() {
   }, [user, refreshJournals]);
 
   const deleteJournalConfirmed = useCallback(async (j: JournalSummary) => {
+    if (!user) return;
     try {
-      await deleteJournalRemote(j.id);
+      await deleteJournalRemote(user.id, j.id);
       if (currentJournalId === j.id) {
         // The open journal was just deleted — reset local state
         doReset();

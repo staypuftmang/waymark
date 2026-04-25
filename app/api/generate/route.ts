@@ -99,7 +99,7 @@ async function getUserIdFromAuth(req: Request): Promise<string | null> {
     if (error || !data?.user) return null;
     return data.user.id;
   } catch (e) {
-    console.error("Failed to verify auth token:", e);
+    console.error("Failed to verify auth token:", e instanceof Error ? e.message : "unknown");
     return null;
   }
 }
@@ -272,7 +272,7 @@ export async function POST(req: Request) {
     const rate_limit = await buildResponseMeta();
     return Response.json({ text, model, ...(fallback ? { fallback: true } : {}), rate_limit });
   } catch (e) {
-    console.error("API generate error:", e);
+    console.error("API generate error:", e instanceof Error ? e.message : "unknown");
     return Response.json({ text: "", error: "Generation failed" }, { status: 500 });
   }
 }

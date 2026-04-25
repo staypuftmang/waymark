@@ -55,7 +55,7 @@ export async function GET(req: Request) {
         : {}),
     });
   } catch (e) {
-    console.error("rate-limit probe failed:", e);
+    console.error("rate-limit probe failed:", e instanceof Error ? e.message : "unknown");
     return Response.json({ signedIn: false });
   }
 }

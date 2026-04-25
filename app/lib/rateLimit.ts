@@ -1,6 +1,9 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase-admin";
 
+const errMsg = (e: unknown): string =>
+  e instanceof Error ? e.message : "unknown";
+
 export const HOURLY_LIMIT = 50;
 export const DAILY_LIMIT = 200;
 
@@ -87,7 +90,7 @@ export async function checkUserRateLimit(userId: string): Promise<RateLimitInfo>
     }
     return { allowed: true, hourlyUsed, hourlyRemaining, dailyUsed, dailyRemaining, resetInSeconds: 0 };
   } catch (e) {
-    console.error("Rate limit check failed (failing open):", e);
+    console.error("Rate limit check failed (failing open):", errMsg(e));
     return failOpenLegacy();
   }
 }
@@ -121,7 +124,7 @@ export async function checkJournalCreationLimit(userId: string): Promise<Journal
     }
     return { allowed: true, used, remaining, resetInSeconds: 0 };
   } catch (e) {
-    console.error("checkJournalCreationLimit failed (failing open):", e);
+    console.error("checkJournalCreationLimit failed (failing open):", errMsg(e));
     return { allowed: true, used: 0, remaining: DAILY_JOURNAL_LIMIT, resetInSeconds: 0 };
   }
 }
@@ -161,7 +164,7 @@ export async function checkJournalRewriteLimit(journalId: string): Promise<Journ
     }
     return { allowed: true, used, remaining, cooldownActive: false, cooldownResetInSeconds: 0 };
   } catch (e) {
-    console.error("checkJournalRewriteLimit failed (failing open):", e);
+    console.error("checkJournalRewriteLimit failed (failing open):", errMsg(e));
     return { allowed: true, used: 0, remaining: PER_JOURNAL_REWRITE_LIMIT, cooldownActive: false, cooldownResetInSeconds: 0 };
   }
 }
@@ -178,7 +181,7 @@ export async function recordUsage(
       journal_id: journalId,
     });
   } catch (e) {
-    console.error("Failed to record AI usage:", e);
+    console.error("Failed to record AI usage:", errMsg(e));
   }
 }
 
@@ -188,6 +191,6 @@ export async function maybeCleanup(): Promise<void> {
     const cutoff = new Date(Date.now() - 2 * DAY_MS).toISOString();
     await supabaseAdmin.from("ai_usage").delete().lt("created_at", cutoff);
   } catch (e) {
-    console.error("ai_usage cleanup failed:", e);
+    console.error("ai_usage cleanup failed:", errMsg(e));
   }
 }

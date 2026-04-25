@@ -3,6 +3,27 @@ import { supabaseAdmin } from "@/app/lib/supabase-admin";
 
 const SLUG_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
 
+// In-memory share rate limit: 20 share/unshare actions per user per hour.
+// Resets on server restart; acceptable trade-off for an abuse cap that
+// doesn't need cross-instance accuracy.
+const SHARE_LIMIT = 20;
+const SHARE_WINDOW_MS = 60 * 60 * 1000;
+const shareHits = new Map<string, number[]>();
+
+function checkShareLimit(userId: string): { allowed: boolean; resetInSeconds: number } {
+  const now = Date.now();
+  const cutoff = now - SHARE_WINDOW_MS;
+  const hits = (shareHits.get(userId) ?? []).filter((t) => t > cutoff);
+  if (hits.length >= SHARE_LIMIT) {
+    const resetInSeconds = Math.max(1, Math.ceil((hits[0] + SHARE_WINDOW_MS - now) / 1000));
+    shareHits.set(userId, hits);
+    return { allowed: false, resetInSeconds };
+  }
+  hits.push(now);
+  shareHits.set(userId, hits);
+  return { allowed: true, resetInSeconds: 0 };
+}
+
 function generateSlug(): string {
   let slug = "";
   for (let i = 0; i < 8; i++) {
@@ -53,6 +74,14 @@ export async function POST(req: Request) {
   const { journalId, action } = body;
   if (!journalId || (action !== "publish" && action !== "unpublish")) {
     return Response.json({ error: "invalid_params" }, { status: 400 });
+  }
+
+  const limit = checkShareLimit(userId);
+  if (!limit.allowed) {
+    return Response.json(
+      { error: "rate_limited", resetInSeconds: limit.resetInSeconds },
+      { status: 429 },
+    );
   }
 
   const { data: journal, error: loadErr } = await supabaseAdmin

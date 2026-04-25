@@ -297,16 +297,21 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
   });
 }
 
-export async function deleteJournal(journalId: string): Promise<void> {
-  const { error } = await supabase.from("journals").delete().eq("id", journalId);
+export async function deleteJournal(userId: string, journalId: string): Promise<void> {
+  const { error } = await supabase
+    .from("journals")
+    .delete()
+    .eq("id", journalId)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
-export async function renameJournal(journalId: string, title: string): Promise<void> {
+export async function renameJournal(userId: string, journalId: string, title: string): Promise<void> {
   const { error } = await supabase
     .from("journals")
     .update({ title })
-    .eq("id", journalId);
+    .eq("id", journalId)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
