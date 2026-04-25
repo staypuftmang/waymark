@@ -1501,7 +1501,7 @@ export default function Page() {
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
@@ -1738,7 +1738,7 @@ export default function Page() {
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -1803,9 +1803,16 @@ export default function Page() {
               />
             </div>
 
-            <div className="flex justify-between" style={{ marginTop: 36 }}>
-              <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
-              <button style={btnPrimary} onClick={() => setStep(99)}>View Journal &#x2192;</button>
+            <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
+              <div className="flex justify-between w-full">
+                <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
+                <button style={btnPrimary} onClick={() => setStep(99)}>View Journal &#x2192;</button>
+              </div>
+              {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+                <div className="text-stone font-body" style={{ fontSize: 13 }}>
+                  {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
+                </div>
+              )}
             </div>
           </div>
         </div>

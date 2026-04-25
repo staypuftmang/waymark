@@ -233,9 +233,10 @@ export default function JournalPreview({
           {typeof rateRemainingToday === "number" && rateRemainingToday < 10 && (
             <span
               style={{
-                fontSize: 10,
+                fontSize: 11,
+                fontWeight: 700,
                 color: vs.bg,
-                opacity: rateRemainingToday <= 3 ? 0.95 : 0.6,
+                opacity: rateRemainingToday <= 3 ? 1 : 0.85,
                 whiteSpace: "nowrap",
               }}
               title="AI generations remaining today"
