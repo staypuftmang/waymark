@@ -1820,7 +1820,7 @@ export default function Page() {
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}>
+        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
           <div className="wm-fb-tabs flex items-center">
             {[
               { step: 0, label: "Your Trip", short: "Trip" },
@@ -1904,19 +1904,26 @@ export default function Page() {
             <HelperText>This appears as the opening paragraph of your journal. The AI also uses it as context when writing about your photos.</HelperText>
           </div>
 
-          <div className="flex justify-between" style={{ marginTop: 36 }}>
-            <button style={btnSecondary} onClick={reset}>&#x2190; Home</button>
-            <button
-              style={{
-                ...btnPrimary,
-                opacity: tripTitle.trim() ? 1 : 0.5,
-                cursor: tripTitle.trim() ? "pointer" : "not-allowed",
-              }}
-              disabled={!tripTitle.trim()}
-              onClick={() => setStep(1)}
-            >
-              Photos &#x2192;
-            </button>
+          <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
+            <div className="flex justify-between w-full">
+              <button style={btnSecondary} onClick={reset}>&#x2190; Home</button>
+              <button
+                style={{
+                  ...btnPrimary,
+                  opacity: tripTitle.trim() ? 1 : 0.5,
+                  cursor: tripTitle.trim() ? "pointer" : "not-allowed",
+                }}
+                disabled={!tripTitle.trim()}
+                onClick={() => setStep(1)}
+              >
+                Photos &#x2192;
+              </button>
+            </div>
+            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+              <div className="text-stone font-body" style={{ fontSize: 13 }}>
+                {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2010,19 +2017,26 @@ export default function Page() {
             />
           </div>
 
-          <div className="flex justify-between" style={{ marginTop: 36 }}>
-            <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
-            <button
-              style={{
-                ...btnPrimary,
-                opacity: photos.length > 0 ? 1 : 0.5,
-                cursor: photos.length > 0 ? "pointer" : "not-allowed",
-              }}
-              disabled={photos.length === 0}
-              onClick={() => setStep(2)}
-            >
-              Style &#x2192;
-            </button>
+          <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
+            <div className="flex justify-between w-full">
+              <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
+              <button
+                style={{
+                  ...btnPrimary,
+                  opacity: photos.length > 0 ? 1 : 0.5,
+                  cursor: photos.length > 0 ? "pointer" : "not-allowed",
+                }}
+                disabled={photos.length === 0}
+                onClick={() => setStep(2)}
+              >
+                Style &#x2192;
+              </button>
+            </div>
+            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+              <div className="text-stone font-body" style={{ fontSize: 13 }}>
+                {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
+              </div>
+            )}
           </div>
         </div>
       )}
