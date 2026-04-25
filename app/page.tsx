@@ -819,6 +819,18 @@ export default function Page() {
   const ok = tripTitle.trim() && photos.length > 0;
 
   const quickGenerate = async () => {
+    // If the journal already has AI content, the user is returning to an
+    // existing journal — skip regeneration so we don't overwrite content
+    // they've already reviewed. They can still rewrite manually from the
+    // review step or the preview's Refine panel.
+    const alreadyHasAi = photos.some(
+      (p) => p.aiCaption || p.aiNotes || p.aiParagraph
+    );
+    if (alreadyHasAi) {
+      setStep(99);
+      return;
+    }
+
     setQuickGenerating(true);
     setGenProgress({ current: 0, total: photos.length });
     track("ai_generated", { mode: "quick", photoCount: photos.length, wordStyle: ws, visualStyle: vk });
