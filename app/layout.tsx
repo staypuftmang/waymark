@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Manrope } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import { AuthProvider } from "@/app/lib/AuthContext";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -57,8 +58,10 @@ export default function RootLayout({
         <link rel="stylesheet" href={styleFontsUrl} />
       </head>
       <body>
-        {children}
-        <Analytics />
+        <AuthProvider>
+          {children}
+          <Analytics />
+        </AuthProvider>
       </body>
     </html>
   );

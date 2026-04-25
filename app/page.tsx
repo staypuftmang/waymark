@@ -19,6 +19,19 @@ import HelperText from "@/app/components/HelperText";
 import CoverEditor from "@/app/components/CoverEditor";
 import SortablePhotoList from "@/app/components/SortablePhotoList";
 import SiteFooter from "@/app/components/SiteFooter";
+import AuthModal from "@/app/components/AuthModal";
+import JournalCard from "@/app/components/JournalCard";
+import { useAuth } from "@/app/lib/AuthContext";
+import {
+  saveJournal as saveJournalRemote,
+  loadJournal as loadJournalRemote,
+  listJournals as listJournalsRemote,
+  deleteJournal as deleteJournalRemote,
+  duplicateJournal as duplicateJournalRemote,
+  renameJournal as renameJournalRemote,
+  isEmptyJournal,
+  type JournalSummary,
+} from "@/app/lib/journalStorage";
 
 /* ── Shared inline styles ── */
 const iStyle: React.CSSProperties = {
@@ -62,40 +75,208 @@ interface HistoryControls {
   canUndo: boolean;
   canRedo: boolean;
 }
+
+type SaveStatus = "idle" | "saving" | "saved" | "offline";
+
+function SaveIndicator({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null;
+  const text =
+    status === "saving" ? "Saving\u2026" :
+    status === "saved" ? "Saved \u2713" :
+    "Offline";
+  return (
+    <span
+      className="font-body"
+      style={{
+        fontSize: 11,
+        color: "var(--color-warm)",
+        letterSpacing: 0.3,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function HeaderAuthControls({
+  onSignInClick,
+  onSignUpClick,
+  onYourJournals,
+}: {
+  onSignInClick: () => void;
+  onSignUpClick: () => void;
+  onYourJournals?: () => void;
+}) {
+  const { user, signOut, loading } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <div className="flex items-center" style={{ gap: 10 }}>
+        <button
+          onClick={onSignInClick}
+          className="bg-transparent border-none cursor-pointer font-body"
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--color-warm)",
+            padding: "6px 4px",
+            display: "var(--wm-signin-display, inline-block)",
+          }}
+          data-wm-hide-mobile
+        >
+          Sign in
+        </button>
+        <button
+          onClick={onSignUpClick}
+          className="border-none cursor-pointer font-body"
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            background: "var(--color-accent)",
+            color: "#fff",
+            padding: "8px 14px",
+            borderRadius: 4,
+          }}
+        >
+          Start free
+        </button>
+      </div>
+    );
+  }
+
+  const initial = (user.email?.[0] ?? "U").toUpperCase();
+  const name =
+    (user.user_metadata?.full_name as string | undefined) ||
+    (user.user_metadata?.name as string | undefined) ||
+    user.email ||
+    "";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Account menu"
+        className="border-none cursor-pointer flex items-center justify-center font-body"
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          background: "var(--color-paper)",
+          color: "var(--color-ink)",
+          fontSize: 13,
+          fontWeight: 700,
+        }}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div
+          className="absolute bg-card border border-border"
+          style={{
+            top: "calc(100% + 6px)",
+            right: 0,
+            minWidth: 220,
+            borderRadius: 5,
+            boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+            overflow: "hidden",
+            zIndex: 200,
+          }}
+        >
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--color-border)" }}>
+            <div className="font-body" style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink)" }}>
+              {name}
+            </div>
+            <div className="text-stone" style={{ fontSize: 11, marginTop: 2, wordBreak: "break-all" }}>
+              {user.email}
+            </div>
+          </div>
+          {onYourJournals && (
+            <button
+              onClick={() => { setOpen(false); onYourJournals(); }}
+              className="w-full text-left bg-transparent border-none cursor-pointer font-body"
+              style={{ padding: "10px 14px", fontSize: 13, color: "var(--color-ink)" }}
+            >
+              Your Journals
+            </button>
+          )}
+          <button
+            onClick={() => { setOpen(false); signOut(); }}
+            className="w-full text-left bg-transparent border-none cursor-pointer font-body"
+            style={{ padding: "10px 14px", fontSize: 13, color: "var(--color-ink)", borderTop: "1px solid var(--color-border)" }}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Header({
   children,
   right,
   onLogoClick,
   history,
+  saveStatus,
+  onSignInClick,
+  onSignUpClick,
+  onYourJournals,
 }: {
   children?: React.ReactNode;
   right?: React.ReactNode;
   onLogoClick?: () => void;
   history?: HistoryControls;
+  saveStatus?: SaveStatus;
+  onSignInClick?: () => void;
+  onSignUpClick?: () => void;
+  onYourJournals?: () => void;
 }) {
   return (
     <div
       className="sticky top-0 z-[100] flex items-center justify-between"
       style={{ background: "var(--color-ink)", padding: "16px 24px" }}
     >
-      <button
-        onClick={onLogoClick}
-        className="font-title bg-transparent border-none cursor-pointer"
-        style={{
-          fontSize: 15,
-          fontWeight: 400,
-          color: "var(--color-paper)",
-          letterSpacing: 2,
-          textTransform: "uppercase",
-          opacity: 0.9,
-          padding: 0,
-        }}
-      >
-        Waymark
-      </button>
+      <div className="flex items-center" style={{ gap: 14 }}>
+        <button
+          onClick={onLogoClick}
+          className="font-title bg-transparent border-none cursor-pointer"
+          style={{
+            fontSize: 15,
+            fontWeight: 400,
+            color: "var(--color-paper)",
+            letterSpacing: 2,
+            textTransform: "uppercase",
+            opacity: 0.9,
+            padding: 0,
+          }}
+        >
+          Waymark
+        </button>
+        {saveStatus && <SaveIndicator status={saveStatus} />}
+      </div>
       <div className="flex items-center" style={{ gap: 8 }}>
         {history && <UndoRedoButtons {...history} />}
         {right || null}
+        {(onSignInClick || onSignUpClick) && (
+          <HeaderAuthControls
+            onSignInClick={onSignInClick ?? (() => {})}
+            onSignUpClick={onSignUpClick ?? (() => {})}
+            onYourJournals={onYourJournals}
+          />
+        )}
       </div>
       {children || null}
     </div>
@@ -186,6 +367,22 @@ export default function Page() {
   const quickRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Auth + cloud journals ──
+  const { user } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
+  const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [journals, setJournals] = useState<JournalSummary[]>([]);
+  const [journalsLoaded, setJournalsLoaded] = useState(false);
+  const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
+  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedUserIdRef = useRef<string | null>(null);
+
+  const openSignIn = useCallback(() => { setAuthModalMode("signin"); setAuthModalOpen(true); }, []);
+  const openSignUp = useCallback(() => { setAuthModalMode("signup"); setAuthModalOpen(true); }, []);
+
   // ── Undo / redo (content changes only) ──
   const getContentSnapshot = useCallback<() => ContentSnapshot>(() => ({
     tripTitle,
@@ -237,6 +434,91 @@ export default function Page() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [isBuilderPage, undo, redo]);
+
+  // ── Refresh the user's saved-journals list whenever auth changes ──
+  const refreshJournals = useCallback(async () => {
+    if (!user) {
+      setJournals([]);
+      setJournalsLoaded(false);
+      return;
+    }
+    try {
+      const list = await listJournalsRemote(user.id);
+      setJournals(list);
+      setJournalsLoaded(true);
+    } catch (err) {
+      console.error("Failed to list journals:", err);
+      setJournalsLoaded(true);
+    }
+  }, [user]);
+
+  useEffect(() => { refreshJournals(); }, [refreshJournals]);
+
+  // Reset currentJournalId when the signed-in user changes (or signs out)
+  useEffect(() => {
+    const uid = user?.id ?? null;
+    if (lastSavedUserIdRef.current !== uid) {
+      lastSavedUserIdRef.current = uid;
+      setCurrentJournalId(null);
+    }
+  }, [user]);
+
+  // ── Cloud auto-save (debounced 2s) for signed-in users ──
+  useEffect(() => {
+    if (!user) return;
+    if (quickGenerating) return; // don't churn during AI generation
+
+    const data = {
+      id: currentJournalId,
+      tripTitle,
+      tripBrief,
+      startDate: startDate ? startDate.toISOString().slice(0, 10) : null,
+      endDate: endDate ? endDate.toISOString().slice(0, 10) : null,
+      visualStyle: vk,
+      wordStyle: ws,
+      layout: lo,
+      coverPhotoId,
+      coverTitle,
+      coverSubtitle,
+      coverTitleEdited,
+      photos,
+    };
+
+    if (isEmptyJournal(data)) return;
+
+    if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    setSaveStatus("saving");
+    cloudSaveTimer.current = setTimeout(async () => {
+      try {
+        const id = await saveJournalRemote(user.id, data);
+        if (!currentJournalId) setCurrentJournalId(id);
+        setSaveStatus("saved");
+        if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+        savedFlashTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
+        // Refresh listings so the landing-page grid reflects the latest title/cover/time
+        refreshJournals();
+      } catch (err) {
+        console.error("Cloud save failed:", err);
+        setSaveStatus("offline");
+        if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
+        savedFlashTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
+      }
+    }, 2000);
+
+    return () => {
+      if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    user,
+    tripTitle, tripBrief,
+    startDate, endDate,
+    vk, ws, lo,
+    coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited,
+    photos,
+    currentJournalId,
+    quickGenerating,
+  ]);
 
   // ── Load saved state on mount + register fallback + rate-limit listeners ──
   useEffect(() => {
@@ -450,7 +732,74 @@ export default function Page() {
     setCoverTitle("");
     setCoverSubtitle("");
     setCoverTitleEdited(false);
+    setCurrentJournalId(null);
   };
+
+  // ── Journal management actions ──
+  const openJournalById = useCallback(async (id: string) => {
+    try {
+      const data = await loadJournalRemote(id);
+      // Hydrate state
+      setTripTitle(data.tripTitle);
+      setTripBrief(data.tripBrief);
+      setStartDate(data.startDate ? new Date(data.startDate) : null);
+      setEndDate(data.endDate ? new Date(data.endDate) : null);
+      setVk(data.visualStyle);
+      setWs(data.wordStyle);
+      setLo(data.layout);
+      setPhotos(data.photos);
+      setCoverPhotoId(typeof data.coverPhotoId === "number" ? data.coverPhotoId : null);
+      setCoverTitle(data.coverTitle);
+      setCoverSubtitle(data.coverSubtitle);
+      setCoverTitleEdited(data.coverTitleEdited);
+      setCurrentJournalId(data.id);
+      // Open in preview by default — user can click Edit to go to builder
+      const hasAi = data.photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
+      setMode(hasAi ? "quick" : "full");
+      setStep(hasAi ? 99 : 1);
+      clearHistory();
+    } catch (err) {
+      console.error("Failed to open journal:", err);
+      setToast("Couldn't open that journal. Try again.");
+      setTimeout(() => setToast(null), 4000);
+    }
+  }, [clearHistory]);
+
+  const renameJournalById = useCallback(async (id: string, title: string) => {
+    try {
+      await renameJournalRemote(id, title);
+      // If the currently open journal is the one being renamed, sync local state
+      if (currentJournalId === id) setTripTitle(title);
+      refreshJournals();
+    } catch (err) {
+      console.error("Rename failed:", err);
+    }
+  }, [currentJournalId, refreshJournals]);
+
+  const duplicateJournalById = useCallback(async (id: string) => {
+    if (!user) return;
+    try {
+      await duplicateJournalRemote(user.id, id);
+      refreshJournals();
+    } catch (err) {
+      console.error("Duplicate failed:", err);
+    }
+  }, [user, refreshJournals]);
+
+  const deleteJournalConfirmed = useCallback(async (j: JournalSummary) => {
+    try {
+      await deleteJournalRemote(j.id);
+      if (currentJournalId === j.id) {
+        // The open journal was just deleted — reset local state
+        doReset();
+      }
+      refreshJournals();
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+    setDeleteJournalConfirm(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentJournalId, refreshJournals]);
 
   const reset = () => {
     // If user has started working, confirm before discarding
@@ -542,6 +891,41 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-paper font-body">
+
+      <AuthModal
+        open={authModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setAuthModalOpen(false)}
+        onAuthed={() => { /* AuthProvider's onAuthStateChange picks it up */ }}
+      />
+
+      {/* ═══════════════ DELETE JOURNAL CONFIRM ═══════════════ */}
+      {deleteJournalConfirm && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 6, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              Delete this journal?
+            </div>
+            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              <strong className="text-ink">{deleteJournalConfirm.title || "Untitled Journal"}</strong> will be permanently deleted. This cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setDeleteJournalConfirm(null)}
+                style={{ ...btnSecondary, fontSize: 13 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteJournalConfirmed(deleteJournalConfirm)}
+                style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════ TOAST ═══════════════ */}
       {toast && (
@@ -665,97 +1049,174 @@ export default function Page() {
       {/* ═══════════════ LANDING ═══════════════ */}
       {mode === null && (
         <div className="min-h-screen flex flex-col">
-          <div className="flex-1 flex items-center justify-center" style={{ padding: "0 28px 40px" }}>
-            <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
-              {/* Masthead logo */}
+          <Header
+            onLogoClick={() => { /* already on landing */ }}
+            saveStatus={saveStatus}
+            onSignInClick={openSignIn}
+            onSignUpClick={openSignUp}
+            onYourJournals={() => { /* already here */ }}
+          />
+          {user && journalsLoaded && journals.length > 0 ? (
+            // Signed in with journals — show the grid
+            <div className="flex-1" style={{ padding: "32px 24px 40px", maxWidth: 1080, margin: "0 auto", width: "100%" }}>
               <div
-                className="font-title animate-fade-up"
                 style={{
-                  fontSize: 26,
-                  fontWeight: 500,
-                  letterSpacing: 3,
-                  textTransform: "uppercase",
-                  color: "var(--color-ink)",
-                  marginBottom: 40,
-                  paddingTop: 20,
+                  fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+                  letterSpacing: 2, color: "var(--color-accent)", marginBottom: 16,
                 }}
               >
-Waymark
+                Your Journals ({journals.length})
               </div>
-
               <div
-                className="animate-fade-up"
                 style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 3,
-                  color: "var(--color-accent)",
-                  marginBottom: 16,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: 16,
                 }}
               >
-                Travel journals, beautifully told
-              </div>
-              <h1
-                className="font-title animate-fade-up-1"
-                style={{
-                  fontSize: 42,
-                  fontWeight: 300,
-                  color: "var(--color-ink)",
-                  lineHeight: 1.2,
-                  marginBottom: 20,
-                  letterSpacing: -0.5,
-                }}
-              >
-                Mark the moments that moved you.
-              </h1>
-              <p
-                className="animate-fade-up-2"
-                style={{
-                  fontSize: 15,
-                  color: "var(--color-stone)",
-                  lineHeight: 1.7,
-                  marginBottom: 36,
-                  maxWidth: 400,
-                  margin: "0 auto 36px",
-                }}
-              >
-                Upload your photos, tell your story, and let AI help you craft a journal worth keeping.
-              </p>
-
-              <div className="flex flex-col gap-2.5 animate-fade-up-3" style={{ maxWidth: 420, margin: "0 auto" }}>
-                {[
-                  { m: "quick" as const, icon: "\u26A1", bg: "var(--color-accent)", t: "Quick Create", d: "Drop photos + story. AI does the rest." },
-                  { m: "full" as const, icon: "\u270E", bg: "var(--color-ink)", t: "Full Builder", d: "Craft every detail yourself or with AI assistance." },
-                ].map(({ m, icon, bg, t, d }) => (
-                  <button
-                    key={m}
-                    onClick={() => { setMode(m); setStep(0); track("journal_started", { mode: m }); }}
-                    className="flex items-center gap-3.5 border border-border bg-card cursor-pointer text-left w-full"
-                    style={{ padding: "16px 20px", borderRadius: 5 }}
-                  >
-                    <div
-                      className="flex items-center justify-center shrink-0"
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 3,
-                        background: bg,
-                        color: bg === "var(--color-ink)" ? "var(--color-paper)" : "#fff",
-                        fontSize: 16,
-                      }}
-                    >
-                      {icon}
-                    </div>
-                    <div>
-                      <div className="text-ink font-semibold" style={{ fontSize: 14, marginBottom: 1 }}>{t}</div>
-                      <div className="text-stone" style={{ fontSize: 12 }}>{d}</div>
-                    </div>
-                  </button>
+                {journals.map((j) => (
+                  <JournalCard
+                    key={j.id}
+                    journal={j}
+                    onOpen={openJournalById}
+                    onRename={renameJournalById}
+                    onDuplicate={duplicateJournalById}
+                    onDelete={(jj) => setDeleteJournalConfirm(jj)}
+                  />
                 ))}
+                {/* + New Journal card */}
+                <button
+                  onClick={() => { setMode("quick"); setStep(0); track("journal_started", { mode: "quick" }); }}
+                  className="bg-transparent cursor-pointer flex flex-col items-center justify-center"
+                  style={{
+                    border: "2px dashed var(--color-border)",
+                    borderRadius: 6,
+                    padding: "32px 16px",
+                    minHeight: 220,
+                    color: "var(--color-stone)",
+                    transition: "border-color .2s, color .2s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-accent)";
+                    (e.currentTarget as HTMLButtonElement).style.color = "var(--color-ink)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border)";
+                    (e.currentTarget as HTMLButtonElement).style.color = "var(--color-stone)";
+                  }}
+                >
+                  <div className="font-title" style={{ fontSize: 32, fontWeight: 300, marginBottom: 6 }}>+</div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>New Journal</div>
+                </button>
               </div>
             </div>
-          </div>
+          ) : (
+            // Signed out, OR signed in with no journals — show the hero + mode picker
+            <div className="flex-1 flex items-center justify-center" style={{ padding: "0 28px 40px" }}>
+              <div style={{ maxWidth: 520, width: "100%", textAlign: "center" }}>
+                {!user && (
+                  <div
+                    className="font-title animate-fade-up"
+                    style={{
+                      fontSize: 26,
+                      fontWeight: 500,
+                      letterSpacing: 3,
+                      textTransform: "uppercase",
+                      color: "var(--color-ink)",
+                      marginBottom: 40,
+                      paddingTop: 20,
+                    }}
+                  >
+                    Waymark
+                  </div>
+                )}
+                <div
+                  className="animate-fade-up"
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: 3,
+                    color: "var(--color-accent)",
+                    marginBottom: 16,
+                  }}
+                >
+                  Travel journals, beautifully told
+                </div>
+                <h1
+                  className="font-title animate-fade-up-1"
+                  style={{
+                    fontSize: 42,
+                    fontWeight: 300,
+                    color: "var(--color-ink)",
+                    lineHeight: 1.2,
+                    marginBottom: 20,
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  Mark the moments that moved you.
+                </h1>
+                {user ? (
+                  <p
+                    className="animate-fade-up-2"
+                    style={{
+                      fontSize: 14, color: "var(--color-stone)",
+                      fontStyle: "italic", lineHeight: 1.6,
+                      marginBottom: 36, maxWidth: 400, margin: "0 auto 36px",
+                    }}
+                  >
+                    Your journals will appear here.
+                  </p>
+                ) : (
+                  <p
+                    className="animate-fade-up-2"
+                    style={{
+                      fontSize: 15,
+                      color: "var(--color-stone)",
+                      lineHeight: 1.7,
+                      marginBottom: 36,
+                      maxWidth: 400,
+                      margin: "0 auto 36px",
+                    }}
+                  >
+                    Upload your photos, tell your story, and let AI help you craft a journal worth keeping.
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-2.5 animate-fade-up-3" style={{ maxWidth: 420, margin: "0 auto" }}>
+                  {[
+                    { m: "quick" as const, icon: "\u26A1", bg: "var(--color-accent)", t: "Quick Create", d: "Drop photos + story. AI does the rest." },
+                    { m: "full" as const, icon: "\u270E", bg: "var(--color-ink)", t: "Full Builder", d: "Craft every detail yourself or with AI assistance." },
+                  ].map(({ m, icon, bg, t, d }) => (
+                    <button
+                      key={m}
+                      onClick={() => { setMode(m); setStep(0); track("journal_started", { mode: m }); }}
+                      className="flex items-center gap-3.5 border border-border bg-card cursor-pointer text-left w-full"
+                      style={{ padding: "16px 20px", borderRadius: 5 }}
+                    >
+                      <div
+                        className="flex items-center justify-center shrink-0"
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 3,
+                          background: bg,
+                          color: bg === "var(--color-ink)" ? "var(--color-paper)" : "#fff",
+                          fontSize: 16,
+                        }}
+                      >
+                        {icon}
+                      </div>
+                      <div>
+                        <div className="text-ink font-semibold" style={{ fontSize: 14, marginBottom: 1 }}>{t}</div>
+                        <div className="text-stone" style={{ fontSize: 12 }}>{d}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={{ padding: "16px 28px", borderTop: "1px solid var(--color-border)", textAlign: "center" }}>
             <div className="text-warm uppercase" style={{ fontSize: 10, letterSpacing: 1.5 }}>
@@ -768,7 +1229,7 @@ Waymark
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
@@ -986,7 +1447,7 @@ Waymark
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -1061,7 +1522,7 @@ Waymark
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }}>
+        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
           <div className="flex gap-0.5">
             {[0, 1, 2].map((s) => (
               <div
