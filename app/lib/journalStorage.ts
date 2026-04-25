@@ -68,7 +68,11 @@ function journalToFields(d: JournalData) {
     visual_style: d.visualStyle,
     word_style: d.wordStyle,
     layout: d.layout,
-    cover_photo_id: d.coverPhotoId != null ? String(d.coverPhotoId) : null,
+    // cover_photo_id is a UUID column, but client-side photo ids are numeric
+    // (generated in the browser). We don't attempt to map them to DB UUIDs —
+    // the `is_cover` flag on each photo row is the source of truth, and
+    // loadJournal() reads the cover from there.
+    cover_photo_id: null,
     cover_title: d.coverTitle,
     cover_subtitle: d.coverSubtitle,
     cover_title_edited: d.coverTitleEdited,
