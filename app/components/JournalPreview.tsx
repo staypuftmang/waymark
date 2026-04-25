@@ -8,6 +8,7 @@ import { exportPDF, exportImage } from "@/app/lib/export";
 import { LayoutMap } from "./layouts";
 import RefinePanel from "./RefinePanel";
 import Lightbox from "./Lightbox";
+import HeaderAuthControls from "./HeaderAuthControls";
 
 interface JournalPreviewProps {
   tripTitle: string;
@@ -23,6 +24,9 @@ interface JournalPreviewProps {
   coverPhotoId: number | null;
   coverTitle: string;
   coverSubtitle: string;
+  onSignInClick?: () => void;
+  onSignUpClick?: () => void;
+  onYourJournals?: () => void;
 }
 
 export default function JournalPreview({
@@ -39,6 +43,9 @@ export default function JournalPreview({
   coverPhotoId,
   coverTitle,
   coverSubtitle,
+  onSignInClick,
+  onSignUpClick,
+  onYourJournals,
 }: JournalPreviewProps) {
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
@@ -195,6 +202,14 @@ export default function JournalPreview({
           <span style={{ opacity: 0.4, fontSize: 10 }}>
             {vs.label} / {LO[lo].label}
           </span>
+
+          {(onSignInClick || onSignUpClick || onYourJournals) && (
+            <HeaderAuthControls
+              onSignInClick={onSignInClick ?? (() => {})}
+              onSignUpClick={onSignUpClick ?? (() => {})}
+              onYourJournals={onYourJournals}
+            />
+          )}
         </div>
       </div>
 
