@@ -818,29 +818,37 @@ export default function Page() {
 
   const ok = tripTitle.trim() && photos.length > 0;
 
-  const quickGenerate = async () => {
-    // If the journal already has AI content, the user is returning to an
-    // existing journal — skip regeneration so we don't overwrite content
-    // they've already reviewed. They can still rewrite manually from the
-    // review step or the preview's Refine panel.
-    const alreadyHasAi = photos.some(
-      (p) => p.aiCaption || p.aiNotes || p.aiParagraph
-    );
-    if (alreadyHasAi) {
-      setStep(99);
-      return;
-    }
+  // True once any photo carries AI output — signals "returning journal" and
+  // flips CTAs from "Generate Journal" to "Update Journal". Never overwrite
+  // reviewed AI content unless the user explicitly hits Rewrite All.
+  const hasAnyAi = photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
+
+  // Generate AI for photos missing AI content. Returns the updated photos
+  // array so callers can decide where to route next.
+  const generateMissingAi = async (mode: "quick" | "full") => {
+    const missing = photos.filter((p) => !(p.aiCaption || p.aiNotes || p.aiParagraph));
+    if (missing.length === 0) return { generated: 0 };
 
     setQuickGenerating(true);
-    setGenProgress({ current: 0, total: photos.length });
-    track("ai_generated", { mode: "quick", photoCount: photos.length, wordStyle: ws, visualStyle: vk });
-    const previousCaptions: string[] = [];
+    setGenProgress({ current: 0, total: missing.length });
+    track("ai_generated", { mode, photoCount: missing.length, wordStyle: ws, visualStyle: vk });
 
-    for (let i = 0; i < photos.length; i++) {
-      setGenProgress({ current: i + 1, total: photos.length });
-      const p = photos[i];
-      const prompt = quickCreatePrompt(ws, tripTitle, tripBrief, dateDisplay, i, photos.length, previousCaptions);
+    // Seed previousCaptions with existing AI captions so new generations stay
+    // stylistically consistent with what the user already has.
+    const previousCaptions: string[] = photos
+      .map((p) => p.aiCaption)
+      .filter((c): c is string => !!c);
 
+    for (let i = 0; i < missing.length; i++) {
+      setGenProgress({ current: i + 1, total: missing.length });
+      const p = missing[i];
+      const fullIdx = photos.findIndex((ph) => ph.id === p.id);
+      const prompt = quickCreatePrompt(
+        ws, tripTitle, tripBrief, dateDisplay,
+        fullIdx >= 0 ? fullIdx : i,
+        photos.length,
+        previousCaptions,
+      );
       const raw = await aiCall(prompt, p.src);
       if (raw) {
         try {
@@ -855,7 +863,22 @@ export default function Page() {
     }
     setQuickGenerating(false);
     setGenProgress(null);
-    setStep(10);
+    return { generated: missing.length };
+  };
+
+  const quickGenerate = async () => {
+    const result = await generateMissingAi("quick");
+    // Fresh journey (no AI before): land on the Quick Review step.
+    // Update journey (returning): skip review and go straight to preview.
+    setStep(hasAnyAi || result.generated === 0 ? 99 : 10);
+  };
+
+  const fullBuilderAdvance = async () => {
+    // Fresh Full Builder: no AI at all — current behavior, straight to preview.
+    // Returning Full Builder with new photos: run AI for the missing ones,
+    // then go to preview. All photos already have AI: skip to preview.
+    if (hasAnyAi) await generateMissingAi("full");
+    setStep(99);
   };
 
   const contentStyle: React.CSSProperties = { maxWidth: 680, margin: "0 auto", padding: "32px 20px 120px" };
@@ -1449,7 +1472,7 @@ export default function Page() {
                 disabled={!ok || !tripBrief.trim() || quickGenerating}
                 onClick={quickGenerate}
               >
-                {quickGenerating ? "Writing journal\u2026" : "Generate Journal"}
+                {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
               </button>
             </div>
           </div>
@@ -1827,13 +1850,13 @@ export default function Page() {
             <button
               style={{
                 ...btnPrimary,
-                opacity: ok ? 1 : 0.5,
-                cursor: ok ? "pointer" : "not-allowed",
+                opacity: ok && !quickGenerating ? 1 : 0.5,
+                cursor: ok && !quickGenerating ? "pointer" : "not-allowed",
               }}
-              disabled={!ok}
-              onClick={() => setStep(99)}
+              disabled={!ok || quickGenerating}
+              onClick={fullBuilderAdvance}
             >
-              Generate Journal
+              {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
             </button>
           </div>
         </div>
