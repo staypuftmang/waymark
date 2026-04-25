@@ -8,7 +8,6 @@ import { exportPDF, exportImage } from "@/app/lib/export";
 import { LayoutMap } from "./layouts";
 import RefinePanel from "./RefinePanel";
 import Lightbox from "./Lightbox";
-import SiteFooter from "./SiteFooter";
 
 interface JournalPreviewProps {
   tripTitle: string;
@@ -369,10 +368,6 @@ export default function JournalPreview({
       >
 
         <LayoutComponent photos={photos} vs={vs} vk={vk} onPhotoClick={openLightbox} />
-
-        <div data-export-hide="links">
-          <SiteFooter />
-        </div>
 
         <div data-export-footer>
           <div
