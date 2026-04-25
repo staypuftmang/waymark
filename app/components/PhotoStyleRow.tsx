@@ -58,7 +58,7 @@ export default function PhotoStyleRow({
       : field === "notes"
         ? rewriteNotesPrompt(ws, title, brief, raw)
         : rewriteParagraphPrompt(ws, title, brief, raw);
-    const t = await aiCall(prompt, p.src);
+    const t = await aiCall(prompt, p.src, { actionType: "rewrite" });
     if (t) setPending((v) => ({ ...v, [field]: t }));
     setLoading(false);
   };
@@ -67,7 +67,7 @@ export default function PhotoStyleRow({
     setLP(true);
     const capText = p.aiCaption || p.caption;
     const notesText = p.aiNotes || p.notes;
-    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src);
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src, { actionType: "rewrite" });
     if (t) setPending((v) => ({ ...v, paragraph: t }));
     setLP(false);
   };

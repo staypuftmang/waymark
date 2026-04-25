@@ -54,7 +54,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
 
       const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
 
-      const raw = await aiCall(prompt, p.src);
+      const raw = await aiCall(prompt, p.src, { actionType: "rewrite_all" });
       if (cancelRef.current) break;
       if (raw) {
         try {

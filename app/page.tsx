@@ -5,7 +5,8 @@ import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt } from "@/app/lib/prompts";
-import { aiCall, setFallbackListener, setRateLimitListener } from "@/app/lib/ai";
+import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener } from "@/app/lib/ai";
+import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useHistory, ContentSnapshot } from "@/app/lib/history";
 import { compressImage } from "@/app/lib/compress";
@@ -72,6 +73,15 @@ const btnSecondary: React.CSSProperties = {
   color: "var(--color-ink)",
   border: "1px solid var(--color-border)",
 };
+
+function formatResetIn(seconds: number): string {
+  if (!seconds || seconds < 1) return "a moment";
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"}`;
+  const hours = Math.ceil(seconds / 3600);
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
 
 /* ── Header ── */
 interface HistoryControls {
@@ -267,6 +277,11 @@ export default function Page() {
   const [journalsLoaded, setJournalsLoaded] = useState(false);
   const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
   const [newJournalPickerOpen, setNewJournalPickerOpen] = useState(false);
+
+  // Rate limit UI state
+  const [rateLimitModal, setRateLimitModal] = useState<RateLimitErrorInfo | null>(null);
+  const [rateStatus, setRateStatus] = useState<RateLimitStatus | null>(null);
+  const rateWarningShownRef = useRef(false);
 
   // Email-capture prompt: shown once per session when a signed-out Quick
   // Create user reaches the preview with AI content. signupPromptDoneRef
@@ -528,9 +543,28 @@ export default function Page() {
       setToast("AI model busy — using faster fallback model");
       setTimeout(() => setToast(null), 5000);
     });
-    setRateLimitListener((msg) => {
-      setToast(msg);
-      setTimeout(() => setToast(null), 10000);
+    setRateLimitListener((info) => {
+      setRateLimitModal(info);
+      track("rate_limit_reached", {
+        signedIn: info.signedIn,
+        limitType: info.limitType,
+      });
+      if (!info.signedIn) {
+        track("rate_limit_signin_prompt_shown", { limitType: info.limitType });
+      }
+    });
+    setRateStatusListener((status) => {
+      setRateStatus(status);
+      // First time a signed-in user crosses the <10-remaining threshold
+      // this session, fire the warning analytics event.
+      if (status.signedIn && status.dailyRemaining < 10 && !rateWarningShownRef.current) {
+        rateWarningShownRef.current = true;
+        track("rate_limit_warning_shown", { dailyRemaining: status.dailyRemaining });
+      }
+      // Reset the latch once they're back above the threshold.
+      if (status.signedIn && status.dailyRemaining >= 10) {
+        rateWarningShownRef.current = false;
+      }
     });
     loadState().then((saved) => {
       if (saved && saved.tripTitle) {
@@ -883,7 +917,7 @@ export default function Page() {
         photos.length,
         previousCaptions,
       );
-      const raw = await aiCall(prompt, p.src);
+      const raw = await aiCall(prompt, p.src, { actionType: "generate" });
       // Re-check after the await — the user may have hit Cancel while the
       // request was in flight. Don't apply a result we no longer want.
       if (cancelGenerationRef.current) break;
@@ -997,6 +1031,47 @@ export default function Page() {
           track("signup_prompt_dismissed", { trigger: "preview_load" });
         }}
       />
+
+      {/* ═══════════════ RATE LIMIT MODAL ═══════════════ */}
+      {rateLimitModal && (
+        <div
+          className="fixed inset-0 z-[450] flex items-center justify-center p-4"
+          style={{ background: "rgba(26,24,21,.6)" }}
+          onClick={() => setRateLimitModal(null)}
+        >
+          <div
+            className="bg-card"
+            style={{ borderRadius: 6, padding: "32px 28px", maxWidth: 400, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-title" style={{ fontSize: 22, fontWeight: 300, color: "var(--color-ink)", marginBottom: 10 }}>
+              Generation limit reached
+            </div>
+            <p className="text-stone" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+              {rateLimitModal.signedIn
+                ? `You've hit the ${rateLimitModal.limitType === "daily" ? "daily" : "hourly"} generation limit. Resets in ${formatResetIn(rateLimitModal.resetInSeconds)}.`
+                : `You've used your ${rateLimitModal.limitType === "daily" ? "daily" : "hourly"} generations. Sign in to get more — limits reset faster on a free account.`}
+              <br />
+              <span style={{ display: "inline-block", marginTop: 8, fontSize: 13 }}>
+                You can still edit, download, and use the rest of Waymark.
+              </span>
+            </p>
+            <div className="flex gap-3 justify-center">
+              {!rateLimitModal.signedIn && (
+                <button
+                  onClick={() => { setRateLimitModal(null); openSignUp(); }}
+                  style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
+                >
+                  Sign in
+                </button>
+              )}
+              <button onClick={() => setRateLimitModal(null)} style={{ ...btnSecondary, fontSize: 13 }}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════ NEW JOURNAL MODE PICKER ═══════════════ */}
       {newJournalPickerOpen && (
@@ -1610,7 +1685,7 @@ export default function Page() {
               ))}
             </div>
 
-            <div className="flex justify-end" style={{ marginTop: 36 }}>
+            <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
               <button
                 style={{
                   ...btnPrimary,
@@ -1622,6 +1697,11 @@ export default function Page() {
               >
                 {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
               </button>
+              {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+                <div className="text-stone font-body" style={{ fontSize: 13 }}>
+                  {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2042,19 +2122,26 @@ export default function Page() {
             />
           </div>
 
-          <div className="flex justify-between" style={{ marginTop: 36 }}>
-            <button style={btnSecondary} onClick={() => setStep(1)}>&#x2190; Back</button>
-            <button
-              style={{
-                ...btnPrimary,
-                opacity: ok && !quickGenerating ? 1 : 0.5,
-                cursor: ok && !quickGenerating ? "pointer" : "not-allowed",
-              }}
-              disabled={!ok || quickGenerating}
-              onClick={fullBuilderAdvance}
-            >
-              {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
-            </button>
+          <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
+            <div className="flex justify-between w-full">
+              <button style={btnSecondary} onClick={() => setStep(1)}>&#x2190; Back</button>
+              <button
+                style={{
+                  ...btnPrimary,
+                  opacity: ok && !quickGenerating ? 1 : 0.5,
+                  cursor: ok && !quickGenerating ? "pointer" : "not-allowed",
+                }}
+                disabled={!ok || quickGenerating}
+                onClick={fullBuilderAdvance}
+              >
+                {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
+              </button>
+            </div>
+            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+              <div className="text-stone font-body" style={{ fontSize: 13 }}>
+                {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
+              </div>
+            )}
           </div>
         </div>
       )}
