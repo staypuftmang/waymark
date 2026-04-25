@@ -902,8 +902,10 @@ export default function Page() {
   }, [currentJournalId, refreshJournals]);
 
   const reset = () => {
-    // If user has started working, confirm before discarding
-    if (tripTitle || photos.length > 0) {
+    // Signed-in users have their work auto-saved to Supabase, so navigating
+    // away never loses anything — skip the discard prompt. Signed-out users
+    // only have IndexedDB, so we still warn them when there's a draft.
+    if (!user && (tripTitle || photos.length > 0)) {
       setConfirmAction(() => doReset);
     } else {
       doReset();
