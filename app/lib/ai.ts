@@ -1,18 +1,35 @@
 import { supabase } from "./supabase";
 
-export type AiActionType = "generate" | "rewrite" | "rewrite_all";
+export type AiActionType = "journal_created" | "rewrite_single" | "rewrite_batch_photo";
+export type RateLimitType =
+  | "hourly"
+  | "daily"
+  | "journal_creation"
+  | "journal_rewrites"
+  | "cooldown";
 
 export interface RateLimitErrorInfo {
   resetInSeconds: number;
-  limitType: "hourly" | "daily";
+  limitType: RateLimitType;
   signedIn: boolean;
   message: string;
+  journalsUsed?: number;
+  journalsRemaining?: number;
+  journalRewritesUsed?: number;
+  journalRewritesRemaining?: number;
+  cooldownRemainingSeconds?: number;
 }
 
 export interface RateLimitStatus {
-  hourlyRemaining: number;
-  dailyRemaining: number;
   signedIn: boolean;
+  hourlyRemaining?: number;
+  dailyRemaining?: number;
+  journalsUsed?: number;
+  journalsRemaining?: number;
+  journalRewritesUsed?: number;
+  journalRewritesRemaining?: number;
+  cooldownActive?: boolean;
+  cooldownRemainingSeconds?: number;
 }
 
 export interface AiResult {
@@ -28,17 +45,9 @@ let onFallbackUsed: (() => void) | null = null;
 let onRateLimited: ((info: RateLimitErrorInfo) => void) | null = null;
 let onRateStatus: ((status: RateLimitStatus) => void) | null = null;
 
-export function setFallbackListener(fn: (() => void) | null) {
-  onFallbackUsed = fn;
-}
-
-export function setRateLimitListener(fn: ((info: RateLimitErrorInfo) => void) | null) {
-  onRateLimited = fn;
-}
-
-export function setRateStatusListener(fn: ((status: RateLimitStatus) => void) | null) {
-  onRateStatus = fn;
-}
+export function setFallbackListener(fn: (() => void) | null) { onFallbackUsed = fn; }
+export function setRateLimitListener(fn: ((info: RateLimitErrorInfo) => void) | null) { onRateLimited = fn; }
+export function setRateStatusListener(fn: ((status: RateLimitStatus) => void) | null) { onRateStatus = fn; }
 
 async function authHeader(): Promise<Record<string, string>> {
   try {
@@ -52,11 +61,11 @@ async function authHeader(): Promise<Record<string, string>> {
 
 export interface AiCallOptions {
   actionType?: AiActionType;
-  /**
-   * If true, a 429 is reported via the rate-limit listener (default).
-   * Set false for callers that want to handle the 429 quietly themselves
-   * (e.g. partial-batch flows that already know they're at the wall).
-   */
+  /** Pass the current journal id (when known) so per-journal limits apply. */
+  journalId?: string | null;
+  /** When false, the server runs the AI call but skips inserting a usage row. */
+  record?: boolean;
+  /** When false, suppress the rate-limit listener (caller wants to handle quietly). */
   surfaceRateLimit?: boolean;
 }
 
@@ -66,7 +75,9 @@ export async function aiCall(
   opts: AiCallOptions = {},
 ): Promise<string> {
   const maxRetries = 2;
-  const actionType = opts.actionType ?? "generate";
+  const actionType = opts.actionType ?? "rewrite_single";
+  const journalId = opts.journalId ?? null;
+  const record = opts.record !== false;
   const surface = opts.surfaceRateLimit !== false;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -75,26 +86,31 @@ export async function aiCall(
       const r = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ prompt, maxTokens: 1000, image, actionType }),
+        body: JSON.stringify({ prompt, maxTokens: 1000, image, actionType, journalId, record }),
       });
 
       if (r.status === 429) {
         try {
           const d = await r.json();
           if (surface && onRateLimited) {
+            const lt = (["hourly", "daily", "journal_creation", "journal_rewrites", "cooldown"] as const)
+              .find((x) => x === d.limit_type) ?? "daily";
             onRateLimited({
               resetInSeconds: Number(d.reset_in_seconds) || 0,
-              limitType: d.limit_type === "hourly" ? "hourly" : "daily",
+              limitType: lt,
               signedIn: !!d.signed_in,
               message: d.message || "Generation limit reached.",
+              journalsUsed: d.journals_used,
+              journalsRemaining: d.journals_remaining,
+              journalRewritesUsed: d.journal_rewrites_used,
+              journalRewritesRemaining: d.journal_rewrites_remaining,
+              cooldownRemainingSeconds: d.cooldown_remaining_seconds,
             });
           }
         } catch {
           if (surface && onRateLimited) {
             onRateLimited({
-              resetInSeconds: 0,
-              limitType: "hourly",
-              signedIn: false,
+              resetInSeconds: 0, limitType: "hourly", signedIn: false,
               message: "Generation limit reached. Try again later.",
             });
           }
@@ -129,22 +145,30 @@ export async function aiCall(
 }
 
 /**
- * Probe the rate-limit endpoint without consuming an action. Used by the UI
- * to keep the "X generations remaining today" hint live as the user
- * navigates between pages or signs in/out. Returns null for anon callers.
+ * Probe the rate-limit endpoint without consuming an action. Pass a
+ * journalId to also fetch per-journal counts.
  */
-export async function fetchRateStatus(): Promise<RateLimitStatus | null> {
+export async function fetchRateStatus(journalId?: string | null): Promise<RateLimitStatus | null> {
   try {
     const auth = await authHeader();
     if (!auth.Authorization) return null;
-    const r = await fetch("/api/rate-limit", { headers: auth });
+    const url = journalId
+      ? `/api/rate-limit?journal=${encodeURIComponent(journalId)}`
+      : "/api/rate-limit";
+    const r = await fetch(url, { headers: auth });
     if (!r.ok) return null;
     const j = await r.json();
     if (!j.signedIn) return null;
     const status: RateLimitStatus = {
+      signedIn: true,
       hourlyRemaining: j.hourlyRemaining,
       dailyRemaining: j.dailyRemaining,
-      signedIn: true,
+      journalsUsed: j.journalsUsed,
+      journalsRemaining: j.journalsRemaining,
+      journalRewritesUsed: j.journalRewritesUsed,
+      journalRewritesRemaining: j.journalRewritesRemaining,
+      cooldownActive: j.cooldownActive,
+      cooldownRemainingSeconds: j.cooldownRemainingSeconds,
     };
     if (onRateStatus) onRateStatus(status);
     return status;

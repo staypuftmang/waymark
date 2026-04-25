@@ -19,6 +19,7 @@ interface PhotoStyleRowProps {
   index?: number;
   total?: number;
   onSaveHistory?: () => void;
+  journalId?: string | null;
 }
 
 export default function PhotoStyleRow({
@@ -34,6 +35,7 @@ export default function PhotoStyleRow({
   index,
   total,
   onSaveHistory,
+  journalId,
 }: PhotoStyleRowProps) {
   const save = () => onSaveHistory?.();
   const [loadingCaption, setLC] = useState(false);
@@ -58,7 +60,7 @@ export default function PhotoStyleRow({
       : field === "notes"
         ? rewriteNotesPrompt(ws, title, brief, raw)
         : rewriteParagraphPrompt(ws, title, brief, raw);
-    const t = await aiCall(prompt, p.src, { actionType: "rewrite" });
+    const t = await aiCall(prompt, p.src, { actionType: "rewrite_single", journalId });
     if (t) setPending((v) => ({ ...v, [field]: t }));
     setLoading(false);
   };
@@ -67,7 +69,7 @@ export default function PhotoStyleRow({
     setLP(true);
     const capText = p.aiCaption || p.caption;
     const notesText = p.aiNotes || p.notes;
-    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src, { actionType: "rewrite" });
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src, { actionType: "rewrite_single", journalId });
     if (t) setPending((v) => ({ ...v, paragraph: t }));
     setLP(false);
   };

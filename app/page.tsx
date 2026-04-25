@@ -307,8 +307,9 @@ export default function Page() {
       setRateStatus(null);
       return;
     }
-    fetchRateStatus().catch(() => {});
-  }, [user, mode, step]);
+    fetchRateStatus(currentJournalId).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, mode, step, currentJournalId]);
 
   // Email-capture prompt: shown once per session when a signed-out Quick
   // Create user reaches the preview with AI content. signupPromptDoneRef
@@ -582,14 +583,14 @@ export default function Page() {
     });
     setRateStatusListener((status) => {
       setRateStatus(status);
+      const dailyRem = status.dailyRemaining ?? Infinity;
       // First time a signed-in user crosses the <10-remaining threshold
       // this session, fire the warning analytics event.
-      if (status.signedIn && status.dailyRemaining < 10 && !rateWarningShownRef.current) {
+      if (status.signedIn && dailyRem < 10 && !rateWarningShownRef.current) {
         rateWarningShownRef.current = true;
-        track("rate_limit_warning_shown", { dailyRemaining: status.dailyRemaining });
+        track("rate_limit_warning_shown", { dailyRemaining: dailyRem });
       }
-      // Reset the latch once they're back above the threshold.
-      if (status.signedIn && status.dailyRemaining >= 10) {
+      if (status.signedIn && dailyRem >= 10) {
         rateWarningShownRef.current = false;
       }
     });
@@ -932,6 +933,14 @@ export default function Page() {
       .map((p) => p.aiCaption)
       .filter((c): c is string => !!c);
 
+    // First-batch-on-fresh-journal logic: if the journal has no prior AI
+    // content, the very first AI call records ONE journal_created row and
+    // counts toward the 10/day creation cap. The remaining calls in the
+    // batch are tagged record:false so they don't eat into the per-journal
+    // 30-rewrite cap on initial creation.
+    const isFreshJournal = !hasAnyAi;
+    let firstCallSent = false;
+
     let processed = 0;
     for (let i = 0; i < missing.length; i++) {
       if (cancelGenerationRef.current) break;
@@ -944,7 +953,18 @@ export default function Page() {
         photos.length,
         previousCaptions,
       );
-      const raw = await aiCall(prompt, p.src, { actionType: "generate" });
+      let opts: Parameters<typeof aiCall>[2];
+      if (isFreshJournal) {
+        // First call: journal_created (counts). Subsequent: don't record.
+        opts = firstCallSent
+          ? { actionType: "rewrite_batch_photo", journalId: currentJournalId, record: false }
+          : { actionType: "journal_created", journalId: currentJournalId };
+        firstCallSent = true;
+      } else {
+        // Update Journal: each new photo counts as a batch rewrite.
+        opts = { actionType: "rewrite_batch_photo", journalId: currentJournalId };
+      }
+      const raw = await aiCall(prompt, p.src, opts);
       // Re-check after the await — the user may have hit Cancel while the
       // request was in flight. Don't apply a result we no longer want.
       if (cancelGenerationRef.current) break;
@@ -1060,45 +1080,89 @@ export default function Page() {
       />
 
       {/* ═══════════════ RATE LIMIT MODAL ═══════════════ */}
-      {rateLimitModal && (
-        <div
-          className="fixed inset-0 z-[450] flex items-center justify-center p-4"
-          style={{ background: "rgba(26,24,21,.6)" }}
-          onClick={() => setRateLimitModal(null)}
-        >
-          <div
-            className="bg-card"
-            style={{ borderRadius: 6, padding: "32px 28px", maxWidth: 400, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="font-title" style={{ fontSize: 22, fontWeight: 300, color: "var(--color-ink)", marginBottom: 10 }}>
-              Generation limit reached
-            </div>
-            <p className="text-stone" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
-              {rateLimitModal.signedIn
-                ? `You've hit the ${rateLimitModal.limitType === "daily" ? "daily" : "hourly"} generation limit. Resets in ${formatResetIn(rateLimitModal.resetInSeconds)}.`
-                : `You've used your ${rateLimitModal.limitType === "daily" ? "daily" : "hourly"} generations. Sign in to get more — limits reset faster on a free account.`}
+      {rateLimitModal && (() => {
+        // Compose headline + body from the structured limitType so each
+        // limit has its own messaging. Anon users always get the sign-in CTA.
+        const m = rateLimitModal;
+        let headline = "Generation limit reached";
+        let body: React.ReactNode = m.message;
+        if (m.limitType === "journal_creation") {
+          headline = "Daily journal limit reached";
+          body = (
+            <>
+              You&apos;ve created {m.journalsUsed ?? 10} journals today. Your limit resets tomorrow.
+              <br />
+              <span style={{ display: "inline-block", marginTop: 8, fontSize: 13 }}>
+                You can still edit your existing journals and download them.
+              </span>
+            </>
+          );
+        } else if (m.limitType === "journal_rewrites") {
+          headline = "All rewrites used for this journal";
+          body = (
+            <>
+              You&apos;ve used all 30 AI rewrites on this journal. You can still edit text manually.
+              <br />
+              <span style={{ display: "inline-block", marginTop: 8, fontSize: 13, color: "var(--color-ink)" }}>
+                Tip: Duplicate this journal to get a fresh set of rewrites.
+              </span>
+            </>
+          );
+        } else if (m.limitType === "cooldown") {
+          headline = "AI is cooling down";
+          body = (
+            <>
+              You&apos;ve used a lot of AI in a short time. Try again in {formatResetIn(m.cooldownRemainingSeconds ?? 0)}.
+            </>
+          );
+        } else if (!m.signedIn) {
+          headline = "Generation limit reached";
+          body = "You've reached the generation limit. Sign in for a higher limit and to save your journals.";
+        } else {
+          body = (
+            <>
+              {`You've hit the ${m.limitType === "daily" ? "daily" : "hourly"} generation limit. Resets in ${formatResetIn(m.resetInSeconds)}.`}
               <br />
               <span style={{ display: "inline-block", marginTop: 8, fontSize: 13 }}>
                 You can still edit, download, and use the rest of Waymark.
               </span>
-            </p>
-            <div className="flex gap-3 justify-center">
-              {!rateLimitModal.signedIn && (
-                <button
-                  onClick={() => { setRateLimitModal(null); openSignUp(); }}
-                  style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
-                >
-                  Sign in
+            </>
+          );
+        }
+        return (
+          <div
+            className="fixed inset-0 z-[450] flex items-center justify-center p-4"
+            style={{ background: "rgba(26,24,21,.6)" }}
+            onClick={() => setRateLimitModal(null)}
+          >
+            <div
+              className="bg-card"
+              style={{ borderRadius: 6, padding: "32px 28px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="font-title" style={{ fontSize: 22, fontWeight: 300, color: "var(--color-ink)", marginBottom: 10 }}>
+                {headline}
+              </div>
+              <p className="text-stone" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+                {body}
+              </p>
+              <div className="flex gap-3 justify-center">
+                {!m.signedIn && (
+                  <button
+                    onClick={() => { setRateLimitModal(null); openSignUp(); }}
+                    style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
+                  >
+                    Sign in
+                  </button>
+                )}
+                <button onClick={() => setRateLimitModal(null)} style={{ ...btnSecondary, fontSize: 13 }}>
+                  Got it
                 </button>
-              )}
-              <button onClick={() => setRateLimitModal(null)} style={{ ...btnSecondary, fontSize: 13 }}>
-                Got it
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ═══════════════ NEW JOURNAL MODE PICKER ═══════════════ */}
       {newJournalPickerOpen && (
@@ -1326,18 +1390,31 @@ export default function Page() {
             onSignInClick={openSignIn}
             onSignUpClick={openSignUp}
             onYourJournals={() => { /* already here */ }}
-            rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}
+            rateRemainingToday={user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" ? rateStatus.dailyRemaining : null}
           />
           {user && journalsLoaded && journals.length > 0 ? (
             // Signed in with journals — show the grid
             <div className="flex-1" style={{ padding: "32px 24px 40px", maxWidth: 1080, margin: "0 auto", width: "100%" }}>
               <div
-                style={{
-                  fontSize: 11, fontWeight: 700, textTransform: "uppercase",
-                  letterSpacing: 2, color: "var(--color-accent)", marginBottom: 16,
-                }}
+                className="flex items-baseline justify-between"
+                style={{ marginBottom: 16, gap: 12, flexWrap: "wrap" }}
               >
-                Your Journals ({journals.length})
+                <div
+                  style={{
+                    fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+                    letterSpacing: 2, color: "var(--color-accent)",
+                  }}
+                >
+                  Your Journals ({journals.length})
+                </div>
+                {typeof rateStatus?.journalsUsed === "number" && rateStatus.journalsUsed > 0 && (
+                  <div
+                    className="text-stone font-body"
+                    style={{ fontSize: 12 }}
+                  >
+                    {rateStatus.journalsUsed} of 10 journals created today
+                  </div>
+                )}
               </div>
               <div
                 style={{
@@ -1725,7 +1802,7 @@ export default function Page() {
               >
                 {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
               </button>
-              {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+              {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
                 <div className="text-stone font-body" style={{ fontSize: 13 }}>
                   {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
                 </div>
@@ -1755,7 +1832,7 @@ export default function Page() {
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -1778,6 +1855,7 @@ export default function Page() {
                     index={i}
                     total={total}
                     onSaveHistory={saveToHistory}
+                    journalId={currentJournalId}
                   />
                 )}
                 renderOverlay={(p) => (
@@ -1808,7 +1886,7 @@ export default function Page() {
                 <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
                 <button style={btnPrimary} onClick={() => setStep(99)}>View Journal &#x2192;</button>
               </div>
-              {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+              {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
                 <div className="text-stone font-body" style={{ fontSize: 13 }}>
                   {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
                 </div>
@@ -1919,7 +1997,7 @@ export default function Page() {
                 Photos &#x2192;
               </button>
             </div>
-            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+            {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
                 {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
               </div>
@@ -1992,6 +2070,7 @@ export default function Page() {
                   onToggleCover={toggleCover}
                   dragHandleProps={handleProps}
                   onSaveHistory={saveToHistory}
+                  journalId={currentJournalId}
                 />
               )}
               renderOverlay={(p) => (
@@ -2032,7 +2111,7 @@ export default function Page() {
                 Style &#x2192;
               </button>
             </div>
-            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+            {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
                 {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
               </div>
@@ -2122,7 +2201,7 @@ export default function Page() {
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
@@ -2146,6 +2225,7 @@ export default function Page() {
                   dragHandleProps={handleProps}
                   index={i}
                   total={total}
+                  journalId={currentJournalId}
                 />
               )}
               renderOverlay={(p) => (
@@ -2186,7 +2266,7 @@ export default function Page() {
                 {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
               </button>
             </div>
-            {user && rateStatus?.signedIn && rateStatus.dailyRemaining < 10 && (
+            {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
                 {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
               </div>
@@ -2217,7 +2297,7 @@ export default function Page() {
           onSignInClick={openSignIn}
           onSignUpClick={openSignUp}
           onYourJournals={reset}
-          rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}
+          rateRemainingToday={user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" ? rateStatus.dailyRemaining : null}
         />
       )}
     </div>

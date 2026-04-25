@@ -24,6 +24,8 @@ interface PhotoCardProps {
   /** Called before any content-mutating user action — field blur,
    * accept/reject of AI suggestions. Enables parent-side undo history. */
   onSaveHistory?: () => void;
+  /** Active journal id (when known) for per-journal rate limiting. */
+  journalId?: string | null;
 }
 
 export default function PhotoCard({
@@ -40,6 +42,7 @@ export default function PhotoCard({
   onToggleCover,
   dragHandleProps,
   onSaveHistory,
+  journalId,
 }: PhotoCardProps) {
   const save = () => onSaveHistory?.();
   const [loadingCaption, setLC] = useState(false);
@@ -64,7 +67,7 @@ export default function PhotoCard({
     const prompt = field === "caption"
       ? rewriteCaptionPrompt(ws, title, brief, raw)
       : rewriteNotesPrompt(ws, title, brief, raw);
-    const t = await aiCall(prompt, p.src, { actionType: "rewrite" });
+    const t = await aiCall(prompt, p.src, { actionType: "rewrite_single", journalId });
     if (t) up(p.id, aiField, t);
     setLoading(false);
   };
@@ -73,7 +76,7 @@ export default function PhotoCard({
     setLP(true);
     const capText = p.aiCaption || p.caption;
     const notesText = p.aiNotes || p.notes;
-    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src, { actionType: "rewrite" });
+    const t = await aiCall(generateParagraphPrompt(ws, title, brief, capText, notesText), p.src, { actionType: "rewrite_single", journalId });
     if (t) {
       up(p.id, "aiParagraph", t);
       setSP(true);

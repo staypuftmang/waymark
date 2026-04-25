@@ -16,6 +16,12 @@ interface RewriteAllProps {
   visualStyle: VisualStyleKey;
   dateDisplay: string;
   onSaveHistory?: () => void;
+  journalId?: string | null;
+  /** Per-journal rewrite counter (used / 30). When >= 30 the parent
+   * page disables the button entirely; we surface the soft warning
+   * inline as the cap approaches. */
+  rewritesUsed?: number;
+  rewritesRemaining?: number;
 }
 
 interface StagedResult {
@@ -24,7 +30,10 @@ interface StagedResult {
   paragraph?: string;
 }
 
-export default function RewriteAll({ photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd, onSaveHistory }: RewriteAllProps) {
+export default function RewriteAll({
+  photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd,
+  onSaveHistory, journalId, rewritesUsed, rewritesRemaining,
+}: RewriteAllProps) {
   const save = () => onSaveHistory?.();
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
@@ -54,7 +63,7 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
 
       const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
 
-      const raw = await aiCall(prompt, p.src, { actionType: "rewrite_all" });
+      const raw = await aiCall(prompt, p.src, { actionType: "rewrite_batch_photo", journalId });
       if (cancelRef.current) break;
       if (raw) {
         try {
@@ -135,9 +144,14 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
     border: "1px solid var(--color-border)",
   };
 
+  // Soft "X of 30 rewrites used" pill \u2014 only show once the user has used
+  // more than 10. At 25+, escalate the color to the accent warning shade.
+  const showRewriteCounter = typeof rewritesUsed === "number" && rewritesUsed > 10;
+  const counterColor = (rewritesUsed ?? 0) >= 25 ? "var(--color-accent)" : "var(--color-stone)";
+
   return (
     <>
-      <div className="inline-flex items-center" style={{ gap: 8 }}>
+      <div className="inline-flex items-center" style={{ gap: 8, flexWrap: "wrap" }}>
         <button
           onClick={run}
           disabled={loading || !has || !!staged}
@@ -151,6 +165,11 @@ export default function RewriteAll({ photos, onUpdate: up, title, brief, wordSty
         >
           {loading ? "\u2026 Generating" : "\u2726 Rewrite All"}
         </button>
+        {showRewriteCounter && (
+          <span style={{ fontSize: 12, color: counterColor, fontFamily: "var(--font-body)" }}>
+            {rewritesUsed} of 30 rewrites used
+          </span>
+        )}
         {loading && (
           <button
             onClick={cancel}

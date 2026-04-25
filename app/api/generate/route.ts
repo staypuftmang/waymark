@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import {
   checkUserRateLimit,
+  checkJournalCreationLimit,
+  checkJournalRewriteLimit,
   recordUsage,
   maybeCleanup,
   HOURLY_LIMIT,
@@ -15,7 +17,6 @@ const PRIMARY_MODEL = "claude-sonnet-4-20250514";
 const FALLBACK_MODEL = "claude-haiku-4-5-20251001";
 
 // ── IP-based rate limiter (signed-out fallback) ──
-// 50 requests per hour + 200 per day. In-memory; resets on cold start.
 interface RateLimitEntry {
   hourCount: number;
   hourResetAt: number;
@@ -39,30 +40,23 @@ interface IpCheckResult {
 function checkIpRateLimit(ip: string): IpCheckResult {
   const now = Date.now();
   let entry = rateLimitMap.get(ip);
-
   if (!entry) {
     entry = { hourCount: 0, hourResetAt: now + HOUR_MS, dayCount: 0, dayResetAt: now + DAY_MS };
     rateLimitMap.set(ip, entry);
   }
   if (now > entry.hourResetAt) { entry.hourCount = 0; entry.hourResetAt = now + HOUR_MS; }
   if (now > entry.dayResetAt) { entry.dayCount = 0; entry.dayResetAt = now + DAY_MS; }
-
   const hourlyRemaining = Math.max(0, HOURLY_LIMIT - entry.hourCount);
   const dailyRemaining = Math.max(0, DAILY_LIMIT - entry.dayCount);
-
   if (entry.dayCount >= DAILY_LIMIT) {
-    return {
-      allowed: false, reason: "daily",
+    return { allowed: false, reason: "daily",
       resetInSeconds: Math.max(1, Math.ceil((entry.dayResetAt - now) / 1000)),
-      hourlyRemaining, dailyRemaining,
-    };
+      hourlyRemaining, dailyRemaining };
   }
   if (entry.hourCount >= HOURLY_LIMIT) {
-    return {
-      allowed: false, reason: "hourly",
+    return { allowed: false, reason: "hourly",
       resetInSeconds: Math.max(1, Math.ceil((entry.hourResetAt - now) / 1000)),
-      hourlyRemaining, dailyRemaining,
-    };
+      hourlyRemaining, dailyRemaining };
   }
   return { allowed: true, hourlyRemaining: hourlyRemaining - 1, dailyRemaining: dailyRemaining - 1 };
 }
@@ -110,7 +104,6 @@ async function getUserIdFromAuth(req: Request): Promise<string | null> {
   }
 }
 
-// ── Build Anthropic message content from prompt + optional image ──
 type ContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } };
@@ -133,135 +126,152 @@ function buildContent(prompt: string, image?: string): ContentBlock[] {
   return content;
 }
 
+const VALID_ACTIONS: ActionType[] = ["journal_created", "rewrite_single", "rewrite_batch_photo"];
+
 export async function POST(req: Request) {
   const userId = await getUserIdFromAuth(req);
   const body = await req.json();
   const { prompt, maxTokens = 1000, image } = body;
-  const actionType: ActionType = (["generate", "rewrite", "rewrite_all"].includes(body.actionType)
+  const actionType: ActionType = (VALID_ACTIONS.includes(body.actionType)
     ? body.actionType
-    : "generate") as ActionType;
+    : "rewrite_single") as ActionType;
+  const journalId: string | null = typeof body.journalId === "string" && body.journalId ? body.journalId : null;
+  const record: boolean = body.record !== false;
 
-  // Rate limit: per-user when signed in, IP-based otherwise.
-  let rateLimitMeta: { hourlyRemaining: number; dailyRemaining: number; signedIn: boolean };
-
+  // Layered rate-limit checks (signed-in only). Each layer fails open if
+  // its own Supabase query fails — see rateLimit.ts.
   if (userId) {
     maybeCleanup();
-    const check = await checkUserRateLimit(userId);
-    if (!check.allowed) {
-      return Response.json(
-        {
-          text: "",
-          error: "rate_limited",
-          limit_type: check.limitType,
-          reset_in_seconds: check.resetInSeconds,
-          hourly_remaining: check.hourlyRemaining,
-          daily_remaining: check.dailyRemaining,
-          signed_in: true,
-          message: check.limitType === "daily"
-            ? "Daily generation limit reached."
-            : "Hourly generation limit reached.",
-        },
-        { status: 429 }
-      );
+
+    // Legacy umbrella check — keeps 50/hr + 200/day per user as a safety net.
+    const umbrella = await checkUserRateLimit(userId);
+    if (!umbrella.allowed) {
+      return Response.json({
+        text: "", error: "rate_limited",
+        limit_type: umbrella.limitType,
+        reset_in_seconds: umbrella.resetInSeconds,
+        signed_in: true,
+        message: umbrella.limitType === "daily"
+          ? "Daily generation limit reached."
+          : "Hourly generation limit reached.",
+      }, { status: 429 });
     }
-    rateLimitMeta = {
-      hourlyRemaining: check.hourlyRemaining,
-      dailyRemaining: check.dailyRemaining,
-      signedIn: true,
-    };
+
+    if (actionType === "journal_created" && record) {
+      const j = await checkJournalCreationLimit(userId);
+      if (!j.allowed) {
+        return Response.json({
+          text: "", error: "rate_limited",
+          limit_type: "journal_creation",
+          journals_used: j.used,
+          journals_remaining: j.remaining,
+          reset_in_seconds: j.resetInSeconds,
+          signed_in: true,
+          message: `Daily journal limit reached. You've created ${j.used} journals today. Your limit resets tomorrow. You can still edit your existing journals and download them.`,
+        }, { status: 429 });
+      }
+    } else if (actionType === "rewrite_single" || actionType === "rewrite_batch_photo") {
+      if (journalId) {
+        const r = await checkJournalRewriteLimit(journalId);
+        if (!r.allowed) {
+          if (r.reason === "cap") {
+            return Response.json({
+              text: "", error: "rate_limited",
+              limit_type: "journal_rewrites",
+              journal_rewrites_used: r.used,
+              journal_rewrites_remaining: r.remaining,
+              signed_in: true,
+              message: "All rewrites used for this journal. You've used all 30 AI rewrites on this journal. You can still edit text manually. Tip: Duplicate this journal to get a fresh set of rewrites.",
+            }, { status: 429 });
+          }
+          // cooldown
+          return Response.json({
+            text: "", error: "rate_limited",
+            limit_type: "cooldown",
+            cooldown_remaining_seconds: r.cooldownResetInSeconds,
+            journal_rewrites_used: r.used,
+            journal_rewrites_remaining: r.remaining,
+            signed_in: true,
+            message: "AI is cooling down. Try again in a moment.",
+          }, { status: 429 });
+        }
+      }
+    }
   } else {
     const ip = getClientIp(req);
     const ipCheck = checkIpRateLimit(ip);
     if (!ipCheck.allowed) {
-      return Response.json(
-        {
-          text: "",
-          error: "rate_limited",
-          limit_type: ipCheck.reason,
-          reset_in_seconds: ipCheck.resetInSeconds ?? 0,
-          hourly_remaining: ipCheck.hourlyRemaining,
-          daily_remaining: ipCheck.dailyRemaining,
-          signed_in: false,
-          message: ipCheck.reason === "daily"
-            ? "Daily generation limit reached. Sign in to get more generations."
-            : "You've been busy! Try again in a few minutes, or sign in to get more generations.",
-        },
-        { status: 429 }
-      );
+      return Response.json({
+        text: "", error: "rate_limited",
+        limit_type: ipCheck.reason,
+        reset_in_seconds: ipCheck.resetInSeconds ?? 0,
+        signed_in: false,
+        message: "You've reached the generation limit. Sign in for a higher limit and to save your journals.",
+      }, { status: 429 });
     }
-    rateLimitMeta = {
-      hourlyRemaining: ipCheck.hourlyRemaining,
-      dailyRemaining: ipCheck.dailyRemaining,
-      signedIn: false,
-    };
-    // Reserve one slot up front. We'll record usage on success below.
   }
 
   const content = buildContent(prompt, image);
 
-  // Try primary model first
-  try {
+  const runWith = async (model: string) => {
     const message = await client.messages.create({
-      model: PRIMARY_MODEL,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content }],
+      model, max_tokens: maxTokens, messages: [{ role: "user", content }],
     });
-
-    const text = message.content
+    return message.content
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("")
-      .trim();
+      .map((b) => b.text).join("").trim();
+  };
 
-    // Record usage on success
+  // Build a usage-status payload for the client to update its UI without
+  // a follow-up probe.
+  async function buildResponseMeta() {
+    const meta: Record<string, unknown> = { signedIn: !!userId };
     if (userId) {
-      recordUsage(userId, actionType);
-      // Decrement remaining counters in our response since we just consumed one
-      rateLimitMeta.hourlyRemaining = Math.max(0, rateLimitMeta.hourlyRemaining - 1);
-      rateLimitMeta.dailyRemaining = Math.max(0, rateLimitMeta.dailyRemaining - 1);
-    } else {
-      recordIpUsage(getClientIp(req));
+      // Refresh counts now that we (may have) recorded a row.
+      const u = await checkUserRateLimit(userId);
+      meta.hourlyRemaining = u.hourlyRemaining;
+      meta.dailyRemaining = u.dailyRemaining;
+      const jc = await checkJournalCreationLimit(userId);
+      meta.journalsUsed = jc.used;
+      meta.journalsRemaining = jc.remaining;
+      if (journalId) {
+        const r = await checkJournalRewriteLimit(journalId);
+        meta.journalRewritesUsed = r.used;
+        meta.journalRewritesRemaining = r.remaining;
+        meta.cooldownActive = r.cooldownActive;
+        meta.cooldownRemainingSeconds = r.cooldownResetInSeconds;
+      }
     }
+    return meta;
+  }
 
-    return Response.json({
-      text,
-      model: PRIMARY_MODEL,
-      rate_limit: rateLimitMeta,
-    });
-  } catch (e: unknown) {
-    const status = (e as { status?: number }).status;
-
-    if (status === 529 || status === 429) {
-      console.warn(`Primary model ${PRIMARY_MODEL} unavailable (${status}), falling back to ${FALLBACK_MODEL}`);
-      try {
-        const message = await client.messages.create({
-          model: FALLBACK_MODEL,
-          max_tokens: maxTokens,
-          messages: [{ role: "user", content }],
-        });
-        const text = message.content
-          .filter((block): block is Anthropic.TextBlock => block.type === "text")
-          .map((block) => block.text)
-          .join("")
-          .trim();
-
-        if (userId) {
-          recordUsage(userId, actionType);
-          rateLimitMeta.hourlyRemaining = Math.max(0, rateLimitMeta.hourlyRemaining - 1);
-          rateLimitMeta.dailyRemaining = Math.max(0, rateLimitMeta.dailyRemaining - 1);
-        } else {
-          recordIpUsage(getClientIp(req));
-        }
-
-        return Response.json({
-          text, model: FALLBACK_MODEL, fallback: true, rate_limit: rateLimitMeta,
-        });
-      } catch (fallbackErr) {
-        console.error("Fallback model also failed:", fallbackErr);
-        return Response.json({ text: "", error: "Both models unavailable", fallback: true }, { status: 503 });
+  try {
+    let text = "";
+    let model = PRIMARY_MODEL;
+    let fallback = false;
+    try {
+      text = await runWith(PRIMARY_MODEL);
+    } catch (e: unknown) {
+      const status = (e as { status?: number }).status;
+      if (status === 529 || status === 429) {
+        console.warn(`Primary model ${PRIMARY_MODEL} unavailable (${status}), falling back to ${FALLBACK_MODEL}`);
+        text = await runWith(FALLBACK_MODEL);
+        model = FALLBACK_MODEL;
+        fallback = true;
+      } else {
+        throw e;
       }
     }
 
+    if (userId && record) {
+      await recordUsage(userId, actionType, journalId);
+    } else if (!userId) {
+      recordIpUsage(getClientIp(req));
+    }
+
+    const rate_limit = await buildResponseMeta();
+    return Response.json({ text, model, ...(fallback ? { fallback: true } : {}), rate_limit });
+  } catch (e) {
     console.error("API generate error:", e);
     return Response.json({ text: "", error: "Generation failed" }, { status: 500 });
   }

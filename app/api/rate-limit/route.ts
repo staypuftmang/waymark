@@ -1,10 +1,18 @@
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
-import { checkUserRateLimit, HOURLY_LIMIT, DAILY_LIMIT } from "@/app/lib/rateLimit";
+import {
+  checkUserRateLimit,
+  checkJournalCreationLimit,
+  checkJournalRewriteLimit,
+  HOURLY_LIMIT,
+  DAILY_LIMIT,
+  DAILY_JOURNAL_LIMIT,
+  PER_JOURNAL_REWRITE_LIMIT,
+} from "@/app/lib/rateLimit";
 
 /**
  * Probe the user's current AI rate-limit status without consuming a
- * generation. Returns { signedIn: false } for anon callers — anon usage
- * lives in memory on the route worker and isn't useful to expose.
+ * generation. Pass ?journal=<uuid> to also get the per-journal counts.
+ * Anon callers get { signedIn: false }.
  */
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization") || req.headers.get("Authorization");
@@ -17,14 +25,34 @@ export async function GET(req: Request) {
   try {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !data?.user) return Response.json({ signedIn: false });
+    const userId = data.user.id;
+    const url = new URL(req.url);
+    const journalId = url.searchParams.get("journal");
 
-    const status = await checkUserRateLimit(data.user.id);
+    const [umbrella, journals, rewrites] = await Promise.all([
+      checkUserRateLimit(userId),
+      checkJournalCreationLimit(userId),
+      journalId ? checkJournalRewriteLimit(journalId) : Promise.resolve(null),
+    ]);
+
     return Response.json({
       signedIn: true,
-      hourlyRemaining: status.hourlyRemaining,
-      dailyRemaining: status.dailyRemaining,
+      hourlyRemaining: umbrella.hourlyRemaining,
+      dailyRemaining: umbrella.dailyRemaining,
       hourlyLimit: HOURLY_LIMIT,
       dailyLimit: DAILY_LIMIT,
+      journalsUsed: journals.used,
+      journalsRemaining: journals.remaining,
+      journalLimit: DAILY_JOURNAL_LIMIT,
+      ...(rewrites
+        ? {
+            journalRewritesUsed: rewrites.used,
+            journalRewritesRemaining: rewrites.remaining,
+            journalRewriteLimit: PER_JOURNAL_REWRITE_LIMIT,
+            cooldownActive: rewrites.cooldownActive,
+            cooldownRemainingSeconds: rewrites.cooldownResetInSeconds,
+          }
+        : {}),
     });
   } catch (e) {
     console.error("rate-limit probe failed:", e);
