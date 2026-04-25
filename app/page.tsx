@@ -1381,16 +1381,19 @@ export default function Page() {
             >
               <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
               <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
-              <HelperText>Best with 5–20 photos. Add the moments that mattered most.</HelperText>
+              {atHardCap ? (
+                <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
+                  Maximum of 30 photos per journal reached. Remove photos to upload more.
+                </div>
+              ) : atSoftCap ? (
+                <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
+                  For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate.
+                </div>
+              ) : (
+                <HelperText>Best with 5–20 photos. Add the moments that mattered most.</HelperText>
+              )}
               <input ref={quickRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
             </div>
-            {(atSoftCap || atHardCap) && (
-              <div className="text-stone" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
-                {atHardCap
-                  ? "Maximum of 30 photos per journal reached. Remove photos to upload more."
-                  : "For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate."}
-              </div>
-            )}
 
             {photos.length > 0 && (
               <div style={{ marginTop: 12 }}>
@@ -1763,16 +1766,19 @@ export default function Page() {
           >
             <div style={{ fontSize: 22, marginBottom: 4, opacity: 0.4 }}>&#x2191;</div>
             <div className="font-semibold text-ink" style={{ fontSize: 13 }}>Upload photos</div>
-            <HelperText>Best with 5–20 photos.</HelperText>
+            {atHardCap ? (
+              <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
+                Maximum of 30 photos per journal reached. Remove photos to upload more.
+              </div>
+            ) : atSoftCap ? (
+              <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
+                For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate.
+              </div>
+            ) : (
+              <HelperText>Best with 5–20 photos.</HelperText>
+            )}
             <input ref={fullRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
           </div>
-          {(atSoftCap || atHardCap) && (
-            <div className="text-stone" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
-              {atHardCap
-                ? "Maximum of 30 photos per journal reached. Remove photos to upload more."
-                : "For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate."}
-            </div>
-          )}
 
           {photos.length > 0 && (
             <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12, marginBottom: 12 }}>
