@@ -9,6 +9,7 @@ import { LayoutMap } from "./layouts";
 import RefinePanel from "./RefinePanel";
 import Lightbox from "./Lightbox";
 import HeaderAuthControls from "./HeaderAuthControls";
+import SharePanel from "./SharePanel";
 import { useAuth } from "@/app/lib/AuthContext";
 
 interface JournalPreviewProps {
@@ -29,6 +30,11 @@ interface JournalPreviewProps {
   onSignUpClick?: () => void;
   onYourJournals?: () => void;
   rateRemainingToday?: number | null;
+  journalId?: string | null;
+  shareSlug?: string | null;
+  isPublic?: boolean;
+  onShareChange?: (slug: string | null, isPublic: boolean) => void;
+  onToast?: (msg: string) => void;
 }
 
 export default function JournalPreview({
@@ -49,6 +55,11 @@ export default function JournalPreview({
   onSignUpClick,
   onYourJournals,
   rateRemainingToday,
+  journalId,
+  shareSlug,
+  isPublic,
+  onShareChange,
+  onToast,
 }: JournalPreviewProps) {
   const { user } = useAuth();
   const vs = VS[vk];
@@ -65,7 +76,10 @@ export default function JournalPreview({
     track("layout_selected", { layout: k });
   };
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const shareRef = useRef<HTMLDivElement>(null);
+  const canShare = !!(user && journalId);
 
   const openLightbox = (photoId: number) => {
     const idx = photos.findIndex((p) => p.id === photoId);
@@ -225,6 +239,38 @@ export default function JournalPreview({
               </div>
             )}
           </div>
+
+          {canShare && (
+            <div className="relative" ref={shareRef} data-export-hide="share">
+              <button
+                onClick={() => setShareOpen((v) => !v)}
+                className="border-none cursor-pointer font-body"
+                style={{
+                  color: vs.bg,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: `${vs.bg}20`,
+                  padding: "4px 10px",
+                  borderRadius: 3,
+                }}
+              >
+                {"\u{1F517} Share"}
+              </button>
+              {shareOpen && journalId && (
+                <SharePanel
+                  journalId={journalId}
+                  initialSlug={shareSlug ?? null}
+                  initialIsPublic={!!isPublic}
+                  onClose={() => setShareOpen(false)}
+                  onChange={(slug, isPub) => onShareChange?.(slug, isPub)}
+                  onToast={(msg) => onToast?.(msg)}
+                  bg={vs.bg}
+                  fg={vs.fg}
+                  accent={vs.accent}
+                />
+              )}
+            </div>
+          )}
 
           <span style={{ opacity: 0.4, fontSize: 10 }}>
             {vs.label} / {LO[lo].label}

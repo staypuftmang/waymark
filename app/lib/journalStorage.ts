@@ -35,6 +35,8 @@ export interface JournalSummary {
   createdAt: string;
   updatedAt: string;
   coverPhotoSrc: string | null;
+  isPublic: boolean;
+  shareSlug: string | null;
 }
 
 export type PhotoTextFields = Partial<{
@@ -256,7 +258,7 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
   const { data, error } = await supabase
     .from("journals")
     .select(
-      "id, title, mode, visual_style, layout, status, created_at, updated_at, journal_photos(src, is_cover, photo_order)"
+      "id, title, mode, visual_style, layout, status, share_slug, is_public, created_at, updated_at, journal_photos(src, is_cover, photo_order)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -270,6 +272,8 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
       visual_style: string;
       layout: string;
       status: string;
+      share_slug: string | null;
+      is_public: boolean | null;
       created_at: string;
       updated_at: string;
       journal_photos: { src: string; is_cover: boolean; photo_order: number }[] | null;
@@ -287,6 +291,8 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       coverPhotoSrc: cover?.src ?? firstByOrder?.src ?? null,
+      isPublic: !!row.is_public,
+      shareSlug: row.share_slug,
     };
   });
 }

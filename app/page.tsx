@@ -288,6 +288,8 @@ export default function Page() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
   const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
+  const [shareSlug, setShareSlug] = useState<string | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [journals, setJournals] = useState<JournalSummary[]>([]);
   const [journalsLoaded, setJournalsLoaded] = useState(false);
@@ -310,6 +312,35 @@ export default function Page() {
     fetchRateStatus(currentJournalId).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, mode, step, currentJournalId]);
+
+  // Load current share status for the preview header.
+  useEffect(() => {
+    if (!user || !currentJournalId) {
+      setShareSlug(null);
+      setIsPublic(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/app/lib/supabase");
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        if (!token) return;
+        const res = await fetch(`/api/share?journalId=${encodeURIComponent(currentJournalId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const d = (await res.json()) as { slug: string | null; isPublic: boolean };
+        if (cancelled) return;
+        setShareSlug(d.slug ?? null);
+        setIsPublic(!!d.isPublic);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, currentJournalId]);
 
   // Email-capture prompt: shown once per session when a signed-out Quick
   // Create user reaches the preview with AI content. signupPromptDoneRef
@@ -1431,6 +1462,8 @@ export default function Page() {
                     onRename={renameJournalById}
                     onDuplicate={duplicateJournalById}
                     onDelete={(jj) => setDeleteJournalConfirm(jj)}
+                    onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }}
+                    onShareChanged={refreshJournals}
                   />
                 ))}
                 {/* + New Journal card */}
@@ -2298,6 +2331,11 @@ export default function Page() {
           onSignUpClick={openSignUp}
           onYourJournals={reset}
           rateRemainingToday={user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" ? rateStatus.dailyRemaining : null}
+          journalId={currentJournalId}
+          shareSlug={shareSlug}
+          isPublic={isPublic}
+          onShareChange={(slug, isPub) => { setShareSlug(slug); setIsPublic(isPub); }}
+          onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }}
         />
       )}
     </div>
