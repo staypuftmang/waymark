@@ -129,12 +129,27 @@ export async function aiCall(
 }
 
 /**
- * Probe the rate-limit endpoint without consuming an action — used by the UI
- * to display "X generations remaining today" hints. Returns null if the
- * server doesn't surface the info (e.g. signed-out + first request).
+ * Probe the rate-limit endpoint without consuming an action. Used by the UI
+ * to keep the "X generations remaining today" hint live as the user
+ * navigates between pages or signs in/out. Returns null for anon callers.
  */
 export async function fetchRateStatus(): Promise<RateLimitStatus | null> {
-  // No dedicated endpoint yet; the status updates ride on every successful
-  // aiCall response. The UI seeds from those.
-  return null;
+  try {
+    const auth = await authHeader();
+    if (!auth.Authorization) return null;
+    const r = await fetch("/api/rate-limit", { headers: auth });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.signedIn) return null;
+    const status: RateLimitStatus = {
+      hourlyRemaining: j.hourlyRemaining,
+      dailyRemaining: j.dailyRemaining,
+      signedIn: true,
+    };
+    if (onRateStatus) onRateStatus(status);
+    return status;
+  } catch (e) {
+    console.warn("Failed to fetch rate status:", e);
+    return null;
+  }
 }

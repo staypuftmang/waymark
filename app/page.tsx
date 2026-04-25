@@ -5,7 +5,7 @@ import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt } from "@/app/lib/prompts";
-import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener } from "@/app/lib/ai";
+import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useHistory, ContentSnapshot } from "@/app/lib/history";
@@ -123,6 +123,7 @@ function Header({
   onSignInClick,
   onSignUpClick,
   onYourJournals,
+  rateRemainingToday,
 }: {
   children?: React.ReactNode;
   right?: React.ReactNode;
@@ -132,6 +133,7 @@ function Header({
   onSignInClick?: () => void;
   onSignUpClick?: () => void;
   onYourJournals?: () => void;
+  rateRemainingToday?: number | null;
 }) {
   return (
     <div
@@ -155,6 +157,20 @@ function Header({
           Waymark
         </button>
         {saveStatus && <SaveIndicator status={saveStatus} />}
+        {typeof rateRemainingToday === "number" && rateRemainingToday < 10 && (
+          <span
+            className="font-body"
+            style={{
+              fontSize: 11,
+              color: rateRemainingToday <= 3 ? "var(--color-accent)" : "var(--color-warm)",
+              letterSpacing: 0.3,
+              whiteSpace: "nowrap",
+            }}
+            title="AI generations remaining today"
+          >
+            {rateRemainingToday} left today
+          </span>
+        )}
       </div>
       {children && (
         <div
@@ -282,6 +298,17 @@ export default function Page() {
   const [rateLimitModal, setRateLimitModal] = useState<RateLimitErrorInfo | null>(null);
   const [rateStatus, setRateStatus] = useState<RateLimitStatus | null>(null);
   const rateWarningShownRef = useRef(false);
+
+  // Proactively refresh rate-limit status on auth/page changes so the
+  // "X generations remaining today" indicator stays live across navigation,
+  // not just after a successful AI call.
+  useEffect(() => {
+    if (!user) {
+      setRateStatus(null);
+      return;
+    }
+    fetchRateStatus().catch(() => {});
+  }, [user, mode, step]);
 
   // Email-capture prompt: shown once per session when a signed-out Quick
   // Create user reaches the preview with AI content. signupPromptDoneRef
@@ -1299,6 +1326,7 @@ export default function Page() {
             onSignInClick={openSignIn}
             onSignUpClick={openSignUp}
             onYourJournals={() => { /* already here */ }}
+            rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}
           />
           {user && journalsLoaded && journals.length > 0 ? (
             // Signed in with journals — show the grid
@@ -1473,7 +1501,7 @@ export default function Page() {
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
@@ -1710,7 +1738,7 @@ export default function Page() {
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -1785,7 +1813,7 @@ export default function Page() {
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
+        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}>
           <div className="wm-fb-tabs flex items-center">
             {[
               { step: 0, label: "Your Trip", short: "Trip" },
@@ -2168,6 +2196,7 @@ export default function Page() {
           onSignInClick={openSignIn}
           onSignUpClick={openSignUp}
           onYourJournals={reset}
+          rateRemainingToday={user && rateStatus?.signedIn ? rateStatus.dailyRemaining : null}
         />
       )}
     </div>

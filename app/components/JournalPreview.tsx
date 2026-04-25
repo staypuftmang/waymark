@@ -28,6 +28,7 @@ interface JournalPreviewProps {
   onSignInClick?: () => void;
   onSignUpClick?: () => void;
   onYourJournals?: () => void;
+  rateRemainingToday?: number | null;
 }
 
 export default function JournalPreview({
@@ -47,6 +48,7 @@ export default function JournalPreview({
   onSignInClick,
   onSignUpClick,
   onYourJournals,
+  rateRemainingToday,
 }: JournalPreviewProps) {
   const { user } = useAuth();
   const vs = VS[vk];
@@ -227,6 +229,20 @@ export default function JournalPreview({
           <span style={{ opacity: 0.4, fontSize: 10 }}>
             {vs.label} / {LO[lo].label}
           </span>
+
+          {typeof rateRemainingToday === "number" && rateRemainingToday < 10 && (
+            <span
+              style={{
+                fontSize: 10,
+                color: vs.bg,
+                opacity: rateRemainingToday <= 3 ? 0.95 : 0.6,
+                whiteSpace: "nowrap",
+              }}
+              title="AI generations remaining today"
+            >
+              {rateRemainingToday} left today
+            </span>
+          )}
 
           {(onSignInClick || onSignUpClick || onYourJournals) && (
             <HeaderAuthControls
