@@ -1,8 +1,11 @@
 import { supabase } from "./supabase";
 import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey } from "./types";
 
+export type JournalMode = "quick" | "full";
+
 export interface JournalData {
   id: string | null;
+  mode: JournalMode;
   tripTitle: string;
   tripBrief: string;
   startDate: string | null; // ISO yyyy-mm-dd
@@ -25,6 +28,7 @@ export interface LoadedJournal {
 export interface JournalSummary {
   id: string;
   title: string;
+  mode: JournalMode;
   visualStyle: string;
   layout: string;
   status: string;
@@ -46,6 +50,7 @@ export type PhotoTextFields = Partial<{
 interface JournalRow {
   id: string;
   title: string | null;
+  mode: string | null;
   trip_brief: string | null;
   start_date: string | null;
   end_date: string | null;
@@ -77,6 +82,7 @@ interface JournalPhotoRow {
 function journalToFields(d: JournalData) {
   return {
     title: d.tripTitle,
+    mode: d.mode,
     trip_brief: d.tripBrief,
     start_date: d.startDate,
     end_date: d.endDate,
@@ -228,6 +234,7 @@ export async function loadJournal(journalId: string): Promise<LoadedJournal> {
   return {
     data: {
       id: journal.id,
+      mode: (journal.mode === "full" ? "full" : "quick") as JournalMode,
       tripTitle: journal.title ?? "",
       tripBrief: journal.trip_brief ?? "",
       startDate: journal.start_date,
@@ -249,7 +256,7 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
   const { data, error } = await supabase
     .from("journals")
     .select(
-      "id, title, visual_style, layout, status, created_at, updated_at, journal_photos(src, is_cover, photo_order)"
+      "id, title, mode, visual_style, layout, status, created_at, updated_at, journal_photos(src, is_cover, photo_order)"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
@@ -259,6 +266,7 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
     const row = j as {
       id: string;
       title: string | null;
+      mode: string | null;
       visual_style: string;
       layout: string;
       status: string;
@@ -272,6 +280,7 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
     return {
       id: row.id,
       title: row.title ?? "",
+      mode: (row.mode === "full" ? "full" : "quick") as JournalMode,
       visualStyle: row.visual_style,
       layout: row.layout,
       status: row.status,

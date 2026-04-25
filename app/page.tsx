@@ -379,6 +379,7 @@ export default function Page() {
   const [journals, setJournals] = useState<JournalSummary[]>([]);
   const [journalsLoaded, setJournalsLoaded] = useState(false);
   const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
+  const [newJournalPickerOpen, setNewJournalPickerOpen] = useState(false);
   const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedUserIdRef = useRef<string | null>(null);
@@ -485,6 +486,7 @@ export default function Page() {
 
     const data = {
       id: currentJournalId,
+      mode: (mode === "full" ? "full" : "quick") as "quick" | "full",
       tripTitle,
       tripBrief,
       startDate: startDate ? startDate.toISOString().slice(0, 10) : null,
@@ -836,10 +838,13 @@ export default function Page() {
       lastSavedPhotosRef.current = data.photos;
       lastSavedCoverIdRef.current = data.coverPhotoId;
       remoteIdMapRef.current = loaded.photoRemoteIds;
-      // Open in preview by default — user can click Edit to go to builder
+      // Route based on the stored mode so the user lands in the builder
+      // they originally chose. Journals with any AI content open straight
+      // to the preview (step 99); work-in-progress lands in that mode's
+      // first editing step (Quick step 0, Full step 1 — Photos & Notes).
       const hasAi = data.photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
-      setMode(hasAi ? "quick" : "full");
-      setStep(hasAi ? 99 : 1);
+      setMode(data.mode);
+      setStep(hasAi ? 99 : data.mode === "quick" ? 0 : 1);
       clearHistory();
     } catch (err) {
       console.error("Failed to open journal:", err);
@@ -1016,6 +1021,74 @@ export default function Page() {
         onClose={() => setAuthModalOpen(false)}
         onAuthed={() => { /* AuthProvider's onAuthStateChange picks it up */ }}
       />
+
+      {/* ═══════════════ NEW JOURNAL MODE PICKER ═══════════════ */}
+      {newJournalPickerOpen && (
+        <div
+          className="fixed inset-0 z-[400] flex items-center justify-center p-4"
+          style={{ background: "rgba(26,24,21,.6)" }}
+          onClick={() => setNewJournalPickerOpen(false)}
+        >
+          <div
+            className="bg-card"
+            style={{ borderRadius: 6, padding: "32px 28px", maxWidth: 440, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-title text-center" style={{ fontSize: 22, fontWeight: 300, color: "var(--color-ink)", marginBottom: 6 }}>
+              Start a new journal
+            </div>
+            <p className="text-stone text-center" style={{ fontSize: 13, marginBottom: 22 }}>
+              Choose how you want to build it.
+            </p>
+            <div className="flex flex-col gap-2.5">
+              {[
+                { m: "quick" as const, icon: "\u26A1", bg: "var(--color-accent)", t: "Quick Create", d: "Drop photos + story. AI does the rest." },
+                { m: "full" as const, icon: "\u270E", bg: "var(--color-ink)", t: "Full Builder", d: "Craft every detail yourself or with AI." },
+              ].map(({ m, icon, bg, t, d }) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    doReset();
+                    setMode(m);
+                    setStep(0);
+                    setNewJournalPickerOpen(false);
+                    track("journal_started", { mode: m });
+                  }}
+                  className="flex items-center gap-3.5 border border-border bg-card cursor-pointer text-left w-full"
+                  style={{ padding: "14px 18px", borderRadius: 5 }}
+                >
+                  <div
+                    className="flex items-center justify-center shrink-0"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 3,
+                      background: bg,
+                      color: bg === "var(--color-ink)" ? "var(--color-paper)" : "#fff",
+                      fontSize: 16,
+                    }}
+                  >
+                    {icon}
+                  </div>
+                  <div>
+                    <div className="text-ink font-semibold" style={{ fontSize: 14, marginBottom: 1 }}>{t}</div>
+                    <div className="text-stone" style={{ fontSize: 12 }}>{d}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="text-center" style={{ marginTop: 16 }}>
+              <button
+                onClick={() => setNewJournalPickerOpen(false)}
+                className="bg-transparent border-none cursor-pointer"
+                style={{ color: "var(--color-warm)", fontSize: 11, padding: 0 }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════ DELETE JOURNAL CONFIRM ═══════════════ */}
       {deleteJournalConfirm && (
@@ -1204,7 +1277,7 @@ export default function Page() {
                 ))}
                 {/* + New Journal card */}
                 <button
-                  onClick={() => { setMode("quick"); setStep(0); track("journal_started", { mode: "quick" }); }}
+                  onClick={() => setNewJournalPickerOpen(true)}
                   className="bg-transparent cursor-pointer flex flex-col items-center justify-center"
                   style={{
                     border: "2px dashed var(--color-border)",

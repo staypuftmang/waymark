@@ -54,6 +54,7 @@ export default function JournalCard({ journal, onOpen, onRename, onDuplicate, on
 
   const styleLabel = VS[journal.visualStyle as VisualStyleKey]?.label ?? journal.visualStyle;
   const layoutLabel = LO[journal.layout as LayoutKey]?.label ?? journal.layout;
+  const modeLabel = journal.mode === "full" ? "Full" : "Quick";
 
   return (
     <div
@@ -134,7 +135,7 @@ export default function JournalCard({ journal, onOpen, onRename, onDuplicate, on
           </div>
         )}
         <div className="text-stone" style={{ fontSize: 12, marginTop: 4, textTransform: "capitalize" }}>
-          {styleLabel} · {layoutLabel}
+          {modeLabel} · {styleLabel} · {layoutLabel}
         </div>
         <div
           className="text-stone"
