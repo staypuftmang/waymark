@@ -1,10 +1,6 @@
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
-function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().substring(0, 100);
-}
-
 /**
  * Width we lay the journal out at while capturing, regardless of viewport.
  * Lock to a single desktop width so a phone download looks identical to a
@@ -12,112 +8,166 @@ function sanitizeFilename(name: string): string {
  */
 export const CAPTURE_WIDTH = 1200;
 
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().substring(0, 100);
+}
+
+function captureScale(): number {
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return Math.max(2, dpr * 2);
+}
+
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const touch = navigator.maxTouchPoints > 0;
+  const ua = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+  return touch && ua;
+}
+
 /**
- * Prepare the journal DOM for capture: pin layout to desktop width, hide
- * chrome, tighten cover, expand filmstrip. Returns a restore function to
- * undo all changes.
+ * Hand a generated file to the OS. On mobile (iOS Safari especially) the
+ * blob-URL + hidden-anchor trick fails silently or with WebKitBlobResource
+ * errors, so we use Web Share API when available and fall back to a data
+ * URL opened in a new tab — both of which Safari handles correctly. On
+ * desktop the anchor-download approach is fastest and most familiar.
  */
-function prepareForCapture(element: HTMLElement) {
-  const originals: Array<() => void> = [];
+async function deliverFile(blob: Blob, filename: string, mimeType: string): Promise<void> {
+  const mobile = isMobileBrowser();
 
-  // Pin the journal root to a fixed desktop width so the layout renders the
-  // same proportions everywhere — without this, mobile viewports collapse the
-  // hero photo and column widths and html2canvas captures the squished result.
-  const origW = element.style.width;
-  const origMinW = element.style.minWidth;
-  const origMaxW = element.style.maxWidth;
-  const origOX = element.style.overflowX;
-  element.style.width = `${CAPTURE_WIDTH}px`;
-  element.style.minWidth = `${CAPTURE_WIDTH}px`;
-  element.style.maxWidth = `${CAPTURE_WIDTH}px`;
-  element.style.overflowX = "hidden";
-  originals.push(() => {
-    element.style.width = origW;
-    element.style.minWidth = origMinW;
-    element.style.maxWidth = origMaxW;
-    element.style.overflowX = origOX;
-  });
+  if (mobile) {
+    type ShareNavigator = Navigator & {
+      share?: (data: ShareData) => Promise<void>;
+      canShare?: (data: ShareData) => boolean;
+    };
+    const nav = navigator as ShareNavigator;
+    if (typeof nav.share === "function") {
+      try {
+        const file = new File([blob], filename, { type: mimeType });
+        if (!nav.canShare || nav.canShare({ files: [file] })) {
+          await nav.share({ files: [file], title: filename });
+          return;
+        }
+      } catch (err) {
+        // User cancellation is expected; bail without falling through.
+        if (err instanceof Error && err.name === "AbortError") return;
+        // Any other Web Share error: try the data-URL fallback below.
+      }
+    }
 
-  // Hide every [data-export-hide] element during capture, regardless of its
-  // value ("top", "refine", "links", …). Keeps the capture logic generic.
-  element.querySelectorAll<HTMLElement>("[data-export-hide]").forEach((node) => {
-    const orig = node.style.display;
+    // Data-URL fallback. Safari renders data: URLs inline (PDF/PNG both),
+    // letting the user invoke the native share sheet from there.
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    const opened = window.open(dataUrl, "_blank");
+    if (!opened) {
+      // Popup blocked — last-resort: navigate the current tab.
+      window.location.href = dataUrl;
+    }
+    return;
+  }
+
+  // Desktop: classic blob-URL + anchor-click download.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Apply the capture-time DOM transformations to a CLONE of the journal
+ * (hide chrome, force desktop hero size, expand filmstrip, pad footer).
+ * Operates destructively on the clone — never on the live tree — so we
+ * don't have to track restore handlers.
+ */
+function prepareCloneForCapture(clone: HTMLElement): void {
+  // Hide chrome (sticky header, refine panel, share button, etc.).
+  clone.querySelectorAll<HTMLElement>("[data-export-hide]").forEach((node) => {
     node.style.display = "none";
-    originals.push(() => { node.style.display = orig; });
   });
 
-  // Cover: shrink the outer wrapper to match the hero image's max-width, and
-  // drop horizontal padding. Otherwise the wrapper captures at viewport width
-  // (e.g. 1280px on desktop) with the image only 960px inside it, and the
-  // whole thing gets scaled down to fit PDF content width — making the hero
-  // image look small with empty side gutters.
-  const cover = element.querySelector("[data-export-cover]") as HTMLElement | null;
+  // Cover wrapper: shrink to hero width, drop horizontal padding.
+  const cover = clone.querySelector("[data-export-cover]") as HTMLElement | null;
   if (cover) {
-    const origMH = cover.style.minHeight;
-    const origP = cover.style.padding;
-    const origW = cover.style.width;
-    const origMW = cover.style.maxWidth;
-    const origM = cover.style.margin;
     cover.style.minHeight = "auto";
     cover.style.padding = "0 0 28px";
     cover.style.width = "960px";
     cover.style.maxWidth = "960px";
     cover.style.margin = "0 auto";
-    originals.push(() => {
-      cover.style.minHeight = origMH;
-      cover.style.padding = origP;
-      cover.style.width = origW;
-      cover.style.maxWidth = origMW;
-      cover.style.margin = origM;
-    });
 
-    // Some mobile browsers don't fully resolve `aspect-ratio` during the
-    // html2canvas layout pass — the hero ends up at width × 0 (or stretched).
-    // Pin an explicit width × height (16:9) on the hero box so the captured
-    // photo is always the same proportions as on desktop. We only do this
-    // when the cover is the photo variant (has an <img>); the no-photo
-    // fallback uses the same wrapper but doesn't need the fixed hero.
+    // Photo cover only: explicit 16:9 hero box. Some mobile browsers don't
+    // resolve `aspect-ratio` cleanly inside html2canvas's layout pass,
+    // which is what produces the stretched hero image we saw on iOS.
     if (cover.querySelector("img")) {
       const hero = cover.querySelector(":scope > div") as HTMLElement | null;
       if (hero) {
         const HERO_W = 960;
         const HERO_H = Math.round((HERO_W * 9) / 16);
-        const ow = hero.style.width;
-        const oh = hero.style.height;
-        const oar = hero.style.aspectRatio;
         hero.style.width = `${HERO_W}px`;
         hero.style.height = `${HERO_H}px`;
         hero.style.aspectRatio = "auto";
-        originals.push(() => {
-          hero.style.width = ow;
-          hero.style.height = oh;
-          hero.style.aspectRatio = oar;
-        });
       }
     }
   }
 
-  // Expand filmstrip so every photo captures — not just the visible slice.
-  const filmstrip = element.querySelector("[data-layout='filmstrip']") as HTMLElement | null;
+  // Filmstrip: wrap rows so every photo lands in the capture.
+  const filmstrip = clone.querySelector("[data-layout='filmstrip']") as HTMLElement | null;
   if (filmstrip) {
-    const origOF = filmstrip.style.overflowX;
-    const origFW = filmstrip.style.flexWrap;
     filmstrip.style.overflowX = "visible";
     filmstrip.style.flexWrap = "wrap";
-    originals.push(() => { filmstrip.style.overflowX = origOF; filmstrip.style.flexWrap = origFW; });
   }
 
-  // Footer: small bottom padding so html2canvas captures the full descenders
-  // of "Made with Waymark · mywaymarks.com" — without it the bottom of the
-  // text can get clipped inside the captured canvas itself.
-  const footer = element.querySelector("[data-export-footer]") as HTMLElement | null;
+  // Footer: padding for descenders so html2canvas doesn't clip the bottom.
+  const footer = clone.querySelector("[data-export-footer]") as HTMLElement | null;
   if (footer) {
-    const origPB = footer.style.paddingBottom;
     footer.style.paddingBottom = "16px";
-    originals.push(() => { footer.style.paddingBottom = origPB; });
   }
+}
 
-  return () => originals.forEach((fn) => fn());
+/**
+ * Deep-clone the journal DOM into an offscreen wrapper at desktop width,
+ * apply prep, hand the clone to `fn`, then remove it. The visible journal
+ * is never mutated — fixes layout twitches and stretched-cover bugs on
+ * mobile during downloads.
+ */
+async function withOffscreenClone<T>(
+  source: HTMLElement,
+  fn: (clone: HTMLElement) => Promise<T>,
+): Promise<T> {
+  const clone = source.cloneNode(true) as HTMLElement;
+  // Carry over computed background so the clone matches the source visually
+  // even before html2canvas reads it.
+  const sourceBg = getComputedStyle(source).backgroundColor;
+  clone.style.background = sourceBg;
+  clone.style.position = "fixed";
+  clone.style.left = "-10000px";
+  clone.style.top = "0";
+  clone.style.width = `${CAPTURE_WIDTH}px`;
+  clone.style.minWidth = `${CAPTURE_WIDTH}px`;
+  clone.style.maxWidth = `${CAPTURE_WIDTH}px`;
+  clone.style.overflow = "hidden";
+  clone.style.pointerEvents = "none";
+  // Preserve sticky/relative children — they should resolve against the clone.
+  clone.style.contain = "layout";
+
+  document.body.appendChild(clone);
+  prepareCloneForCapture(clone);
+
+  // Allow layout/paint to settle before html2canvas reads sizes.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  try {
+    return await fn(clone);
+  } finally {
+    clone.remove();
+  }
 }
 
 /**
@@ -127,18 +177,17 @@ function prepareForCapture(element: HTMLElement) {
  * Magazine pairs are collapsed to their group wrapper so both columns render
  * together as a single unit.
  */
-function findEntryElements(element: HTMLElement): HTMLElement[] {
+function findEntryElements(root: HTMLElement): HTMLElement[] {
   const entries: HTMLElement[] = [];
   const seen = new Set<HTMLElement>();
 
-  element.querySelectorAll("img").forEach((img) => {
-    // Skip images inside the cover — they're captured as part of the cover unit
+  root.querySelectorAll("img").forEach((img) => {
     if (img.closest("[data-export-cover]")) return;
 
     let entry: HTMLElement | null = img.parentElement;
-    while (entry && entry !== element) {
+    while (entry && entry !== root) {
       const parent = entry.parentElement;
-      if (!parent || parent === element) break;
+      if (!parent || parent === root) break;
 
       if (parent.classList.contains("wm-magazine-pair")) {
         entry = parent.parentElement;
@@ -149,7 +198,7 @@ function findEntryElements(element: HTMLElement): HTMLElement[] {
       entry = parent;
     }
 
-    if (entry && entry !== element && !seen.has(entry)) {
+    if (entry && entry !== root && !seen.has(entry)) {
       seen.add(entry);
       entries.push(entry);
     }
@@ -158,23 +207,16 @@ function findEntryElements(element: HTMLElement): HTMLElement[] {
   return entries.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
 }
 
-function captureScale(): number {
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  return Math.max(2, dpr * 2);
-}
-
 async function captureUnit(
   el: HTMLElement,
   bgColor: string,
-  contentWidth: number
+  contentWidth: number,
 ): Promise<{ dataUrl: string; width: number; height: number }> {
   const canvas = await html2canvas(el, {
     scale: captureScale(),
     useCORS: true,
     backgroundColor: bgColor,
     logging: false,
-    // Force html2canvas to lay everything out at desktop width — without this
-    // mobile viewport widths leak into the capture and squash the hero photo.
     windowWidth: CAPTURE_WIDTH,
   });
   const ratio = contentWidth / canvas.width;
@@ -189,17 +231,15 @@ export async function exportPDF(
   elementId: string,
   title: string,
   bgColor: string,
-  _captionFont: string
+  _captionFont: string,
 ): Promise<void> {
   const element = document.getElementById(elementId);
   if (!element) throw new Error("Element not found");
 
-  const restore = prepareForCapture(element);
-
-  try {
-    const cover = element.querySelector("[data-export-cover]") as HTMLElement | null;
-    const footer = element.querySelector("[data-export-footer]") as HTMLElement | null;
-    const entries = findEntryElements(element);
+  await withOffscreenClone(element, async (clone) => {
+    const cover = clone.querySelector("[data-export-cover]") as HTMLElement | null;
+    const footer = clone.querySelector("[data-export-footer]") as HTMLElement | null;
+    const entries = findEntryElements(clone);
 
     // A4 in points
     const pdfWidth = 595.28;
@@ -232,11 +272,9 @@ export async function exportPDF(
       yCursor = margin;
     };
 
-    // Place one captured unit on the current page, starting a new page if it
-    // doesn't fit the remaining space. Oversize units are scaled to one page.
     const place = (
       unit: { dataUrl: string; width: number; height: number },
-      opts: { forceNewPage?: boolean } = {}
+      opts: { forceNewPage?: boolean } = {},
     ) => {
       let w = unit.width;
       let h = unit.height;
@@ -254,9 +292,7 @@ export async function exportPDF(
       yCursor += h + entryGap;
     };
 
-    // Cover (title page): full PDF width, vertically centered on page 1 so
-    // the hero + title + trip brief read as a proper title page rather than
-    // a small block at the top with a half-blank page below.
+    // Cover (title page): vertically centered on page 1.
     primeNewPage();
     if (cover) {
       const coverUnit = await captureUnit(cover, bgColor, contentWidth);
@@ -270,7 +306,6 @@ export async function exportPDF(
       const cx = margin + (contentWidth - cw) / 2;
       const cy = margin + (contentHeight - ch) / 2;
       pdf.addImage(coverUnit.dataUrl, "PNG", cx, cy, cw, ch);
-      // Push the first entry onto a fresh page regardless of remaining space.
       yCursor = pdfHeight;
     }
 
@@ -280,10 +315,6 @@ export async function exportPDF(
     }
 
     if (footer) {
-      // Footer is all-or-nothing: either the full "— fin —" + "Made with
-      // Waymark" block fits entirely on the current page, or it gets its
-      // own final page with the block centered vertically. It never sits
-      // partially below the printable area.
       const footerUnit = await captureUnit(footer, bgColor, contentWidth);
       let fw = footerUnit.width;
       let fh = footerUnit.height;
@@ -293,10 +324,6 @@ export async function exportPDF(
         fw *= s;
       }
 
-      // Prefer fitting the FIN + footer block tight against the last entry
-      // on the current page. If it has to move to its own final page, anchor
-      // it to the bottom of the printable area so the page doesn't read as
-      // mostly blank space above the block.
       const fitsOnCurrentPage = yCursor + fh <= usableBottom;
       if (!fitsOnCurrentPage) primeNewPage();
 
@@ -305,45 +332,31 @@ export async function exportPDF(
       pdf.addImage(footerUnit.dataUrl, "PNG", fx, fy, fw, fh);
     }
 
-    pdf.save(`Waymark - ${sanitizeFilename(title)}.pdf`);
-  } finally {
-    restore();
-  }
+    const blob = pdf.output("blob");
+    await deliverFile(blob, `Waymark - ${sanitizeFilename(title)}.pdf`, "application/pdf");
+  });
 }
 
 export async function exportImage(elementId: string, title: string, bgColor: string): Promise<void> {
   const element = document.getElementById(elementId);
   if (!element) throw new Error("Element not found");
 
-  const restore = prepareForCapture(element);
+  await withOffscreenClone(element, async (clone) => {
+    const canvas = await html2canvas(clone, {
+      scale: captureScale(),
+      useCORS: true,
+      backgroundColor: bgColor,
+      width: CAPTURE_WIDTH,
+      height: clone.scrollHeight,
+      windowWidth: CAPTURE_WIDTH,
+      windowHeight: clone.scrollHeight,
+      logging: false,
+    });
 
-  // Capture at a fixed desktop width regardless of device viewport so a
-  // mobile download matches the desktop output. prepareForCapture has
-  // already pinned #journal-root to CAPTURE_WIDTH; we mirror that here so
-  // html2canvas's internal layout pass uses the same width.
-  const canvas = await html2canvas(element, {
-    scale: captureScale(),
-    useCORS: true,
-    backgroundColor: bgColor,
-    width: CAPTURE_WIDTH,
-    height: element.scrollHeight,
-    windowWidth: CAPTURE_WIDTH,
-    windowHeight: element.scrollHeight,
-    logging: false,
+    const blob: Blob | null = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/png");
+    });
+    if (!blob) return;
+    await deliverFile(blob, `Waymark - ${sanitizeFilename(title)}.png`, "image/png");
   });
-
-  restore();
-
-  canvas.toBlob(
-    (blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Waymark - ${sanitizeFilename(title)}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    },
-    "image/png"
-  );
 }
