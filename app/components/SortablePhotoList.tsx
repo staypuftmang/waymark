@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, ReactNode } from "react";
+import { Fragment, useState, ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -126,10 +126,14 @@ export default function SortablePhotoList({
   if (disabled) {
     return (
       <>
-        {photos.map((p, i) =>
+        {photos.map((p, i) => (
           // Pass undefined so renderItem can conditionally hide the handle.
-          renderItem(p, i, photos.length, undefined, false)
-        )}
+          // Fragment wrapper with key avoids React's missing-key warning since
+          // renderItem's returned root is opaque to us here.
+          <Fragment key={p.id}>
+            {renderItem(p, i, photos.length, undefined, false)}
+          </Fragment>
+        ))}
       </>
     );
   }

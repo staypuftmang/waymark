@@ -56,6 +56,16 @@ function prepareForCapture(element: HTMLElement) {
     originals.push(() => { filmstrip.style.overflowX = origOF; filmstrip.style.flexWrap = origFW; });
   }
 
+  // Footer: small bottom padding so html2canvas captures the full descenders
+  // of "Made with Waymark · mywaymarks.com" — without it the bottom of the
+  // text can get clipped inside the captured canvas itself.
+  const footer = element.querySelector("[data-export-footer]") as HTMLElement | null;
+  if (footer) {
+    const origPB = footer.style.paddingBottom;
+    footer.style.paddingBottom = "16px";
+    originals.push(() => { footer.style.paddingBottom = origPB; });
+  }
+
   return () => originals.forEach((fn) => fn());
 }
 
@@ -97,20 +107,25 @@ function findEntryElements(element: HTMLElement): HTMLElement[] {
   return entries.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
 }
 
+function captureScale(): number {
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return Math.max(2, dpr * 2);
+}
+
 async function captureUnit(
   el: HTMLElement,
   bgColor: string,
   contentWidth: number
 ): Promise<{ dataUrl: string; width: number; height: number }> {
   const canvas = await html2canvas(el, {
-    scale: 3,
+    scale: captureScale(),
     useCORS: true,
     backgroundColor: bgColor,
     logging: false,
   });
   const ratio = contentWidth / canvas.width;
   return {
-    dataUrl: canvas.toDataURL("image/jpeg", 0.95),
+    dataUrl: canvas.toDataURL("image/png"),
     width: contentWidth,
     height: canvas.height * ratio,
   };
@@ -138,8 +153,10 @@ export async function exportPDF(
     const margin = 28;
     // Hard safety margin at the bottom of every page — nothing may be placed
     // below this line. Larger than the top/side margin because text baselines
-    // and html2canvas descenders can bleed past the computed bounding box.
-    const bottomSafety = 40;
+    // and html2canvas descenders can bleed past the computed bounding box,
+    // and because some PDF viewers (and physical printers) crop a few extra
+    // pts at the page edge.
+    const bottomSafety = 60;
     const usableBottom = pdfHeight - bottomSafety;
     const contentWidth = pdfWidth - margin * 2;
     const contentHeight = usableBottom - margin;
@@ -179,18 +196,26 @@ export async function exportPDF(
       if (opts.forceNewPage || h > spaceLeft) primeNewPage();
 
       const x = margin + (contentWidth - w) / 2;
-      pdf.addImage(unit.dataUrl, "JPEG", x, yCursor, w, h);
+      pdf.addImage(unit.dataUrl, "PNG", x, yCursor, w, h);
       yCursor += h + entryGap;
     };
 
-    // Cover: full PDF width at the top of page 1. Occupies roughly the top
-    // half of the page (hero is 16:9 → ~305pt tall at 539pt wide; trip brief
-    // and padding push that closer to 50–60%). No vertical centering — that
-    // previously left the hero floating in the middle with blank space.
+    // Cover (title page): full PDF width, vertically centered on page 1 so
+    // the hero + title + trip brief read as a proper title page rather than
+    // a small block at the top with a half-blank page below.
     primeNewPage();
     if (cover) {
       const coverUnit = await captureUnit(cover, bgColor, contentWidth);
-      place(coverUnit);
+      let cw = coverUnit.width;
+      let ch = coverUnit.height;
+      if (ch > contentHeight) {
+        const s = contentHeight / ch;
+        ch = contentHeight;
+        cw *= s;
+      }
+      const cx = margin + (contentWidth - cw) / 2;
+      const cy = margin + (contentHeight - ch) / 2;
+      pdf.addImage(coverUnit.dataUrl, "PNG", cx, cy, cw, ch);
       // Push the first entry onto a fresh page regardless of remaining space.
       yCursor = pdfHeight;
     }
@@ -214,16 +239,16 @@ export async function exportPDF(
         fw *= s;
       }
 
-      // All-or-nothing: the whole FIN + footer block must fit above the
-      // bottomSafety line, or it gets its own final page.
+      // Prefer fitting the FIN + footer block tight against the last entry
+      // on the current page. If it has to move to its own final page, anchor
+      // it to the bottom of the printable area so the page doesn't read as
+      // mostly blank space above the block.
       const fitsOnCurrentPage = yCursor + fh <= usableBottom;
       if (!fitsOnCurrentPage) primeNewPage();
 
       const fx = margin + (contentWidth - fw) / 2;
-      const fy = fitsOnCurrentPage
-        ? yCursor
-        : margin + (contentHeight - fh) / 2;
-      pdf.addImage(footerUnit.dataUrl, "JPEG", fx, fy, fw, fh);
+      const fy = fitsOnCurrentPage ? yCursor : usableBottom - fh;
+      pdf.addImage(footerUnit.dataUrl, "PNG", fx, fy, fw, fh);
     }
 
     pdf.save(`Waymark - ${sanitizeFilename(title)}.pdf`);
@@ -238,11 +263,17 @@ export async function exportImage(elementId: string, title: string, bgColor: str
 
   const restore = prepareForCapture(element);
 
+  // Capture the full element box. Passing explicit width + windowWidth keeps
+  // wide cover content (title overlay, trip brief) from being clipped at
+  // narrower viewports; height + windowHeight likewise capture the full
+  // scrollable journal regardless of what's currently in view.
   const canvas = await html2canvas(element, {
-    scale: 3,
+    scale: captureScale(),
     useCORS: true,
     backgroundColor: bgColor,
+    width: element.scrollWidth,
     height: element.scrollHeight,
+    windowWidth: element.scrollWidth,
     windowHeight: element.scrollHeight,
     logging: false,
   });
@@ -255,11 +286,10 @@ export async function exportImage(elementId: string, title: string, bgColor: str
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Waymark - ${sanitizeFilename(title)}.jpg`;
+      a.download = `Waymark - ${sanitizeFilename(title)}.png`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    "image/jpeg",
-    0.95
+    "image/png"
   );
 }
