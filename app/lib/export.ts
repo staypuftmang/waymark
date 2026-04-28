@@ -82,20 +82,19 @@ function prepareCloneForCapture(clone: HTMLElement): void {
     cover.style.maxWidth = "960px";
     cover.style.margin = "0 auto";
 
-    // Photo cover only: explicit 3:2 hero box. Some mobile browsers don't
-    // resolve `aspect-ratio` cleanly inside html2canvas's layout pass,
-    // which is what produces the stretched hero image we saw on iOS.
-    // Must match the aspectRatio set on the cover hero in JournalPreview /
-    // PublicJournalView (3 / 2) so capture matches the live render.
-    if (cover.querySelector("img")) {
-      const hero = cover.querySelector(":scope > div") as HTMLElement | null;
-      if (hero) {
-        const HERO_W = 960;
-        const HERO_H = Math.round((HERO_W * 2) / 3);
-        hero.style.width = `${HERO_W}px`;
-        hero.style.height = `${HERO_H}px`;
-        hero.style.aspectRatio = "auto";
-      }
+    // Photo cover: do NOT impose a fixed aspect ratio at capture time. The
+    // cover image now uses its natural aspect (capped to maxHeight: min(60vh,
+    // 600px) on the live element). The capture clone inherits that style;
+    // because windowHeight is set to scrollHeight, 60vh would resolve to a
+    // huge value, but the 600px cap kicks in first — so capture matches the
+    // live render and we don't crop the photo.
+    const heroImg = cover.querySelector("img") as HTMLImageElement | null;
+    if (heroImg) {
+      // Belt-and-braces: ensure the img doesn't go past the 600px ceiling
+      // even if the source style is somehow stripped (older Safari etc.).
+      heroImg.style.maxHeight = "600px";
+      heroImg.style.height = "auto";
+      heroImg.style.objectFit = "contain";
     }
   }
 

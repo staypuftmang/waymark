@@ -305,12 +305,12 @@ export default function JournalPreview({
       {coverPhoto ? (
         <div data-export-cover style={{ padding: "24px 24px 0" }}>
           <div
+            data-cover-hero
             style={{
               position: "relative",
               width: "100%",
               maxWidth: 960,
               margin: "0 auto",
-              aspectRatio: "3 / 2",
               borderRadius: vs.bg === "#0F0F0F" || vk === "brutalist" ? 0 : 5,
               overflow: "hidden",
             }}
@@ -319,10 +319,12 @@ export default function JournalPreview({
               src={coverPhoto.src}
               alt=""
               style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
                 display: "block",
+                width: "100%",
+                height: "auto",
+                maxHeight: "min(60vh, 600px)",
+                objectFit: "contain",
+                margin: "0 auto",
               }}
             />
             {/* Subtle full-photo darken + fully-centered text stack:
@@ -344,11 +346,11 @@ export default function JournalPreview({
                 className="wm-cover-title"
                 style={{
                   fontFamily: vs.fontTitle,
-                  fontSize: vk === "polaroid" ? 36 : vk === "brutalist" ? 24 : vk === "darkroom" ? 28 : vk === "botanical" ? 30 : 32,
-                  fontWeight: 300,
+                  fontSize: vk === "polaroid" ? 44 : vk === "brutalist" ? 32 : vk === "darkroom" ? 36 : vk === "botanical" ? 38 : 40,
+                  fontWeight: 700,
                   color: "#fff",
-                  textShadow: "0 2px 8px rgba(0,0,0,0.5)",
-                  lineHeight: 1.2,
+                  textShadow: "0 2px 8px rgba(0,0,0,0.6)",
+                  lineHeight: 1.15,
                   marginBottom: 10,
                   maxWidth: "85%",
                   letterSpacing: vk === "darkroom" ? 2 : vk === "brutalist" ? 1 : 0,
@@ -361,11 +363,11 @@ export default function JournalPreview({
                 <div
                   style={{
                     fontFamily: vs.fontCaption,
-                    fontSize: 11,
-                    color: "rgba(255,255,255,0.7)",
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.85)",
                     textTransform: "uppercase",
                     letterSpacing: 2,
-                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    textShadow: "0 2px 8px rgba(0,0,0,0.6)",
                     marginBottom: coverSubtitle ? 8 : 0,
                   }}
                 >
@@ -379,8 +381,8 @@ export default function JournalPreview({
                     fontFamily: vs.fontCaption,
                     fontStyle: "italic",
                     fontSize: vk === "polaroid" ? 15 : vk === "brutalist" ? 13 : vk === "darkroom" ? 14 : 16,
-                    color: "rgba(255,255,255,0.85)",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    color: "#fff",
+                    textShadow: "0 2px 8px rgba(0,0,0,0.6)",
                     maxWidth: "80%",
                   }}
                 >
@@ -397,10 +399,11 @@ export default function JournalPreview({
                 lineHeight: 1.8,
                 maxWidth: 540,
                 margin: "32px auto 0",
-                opacity: 0.8,
+                opacity: 0.85,
                 fontStyle: vk === "editorial" ? "italic" : "normal",
                 whiteSpace: "pre-line",
                 textAlign: "center",
+                textShadow: "0 2px 8px rgba(0,0,0,0.6)",
               }}
             >
               {tripBrief}
