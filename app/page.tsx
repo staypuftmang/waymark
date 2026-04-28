@@ -946,7 +946,7 @@ export default function Page() {
     setBriefGenerating(true);
     try {
       const thumbs = await Promise.all(photos.map((p) => makeThumbnail(p.src, 400, 0.7)));
-      const prompt = tripBriefFromPhotosPrompt(tripTitle, dateDisplay, photos.length);
+      const prompt = tripBriefFromPhotosPrompt(tripTitle, dateDisplay, photos.length, ws);
       const text = await aiCall(prompt, undefined, {
         actionType: "trip_brief_generate",
         images: thumbs,
@@ -969,7 +969,7 @@ export default function Page() {
     }
     // saveToHistory is stable; the rest are direct deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [briefGenerating, photos, tripTitle, dateDisplay]);
+  }, [briefGenerating, photos, tripTitle, dateDisplay, ws]);
 
   const onClickGenerateBrief = useCallback(() => {
     if (briefGenerating || photos.length === 0) return;
