@@ -108,30 +108,37 @@ type ContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } };
 
-function buildContent(prompt: string, image?: string): ContentBlock[] {
+function pushImageBlock(content: ContentBlock[], image: string): void {
+  if (!image || !image.startsWith("data:")) return;
+  const commaIdx = image.indexOf(",");
+  const header = image.slice(0, commaIdx);
+  const data = image.slice(commaIdx + 1);
+  const mediaTypeMatch = header.match(/data:([^;]+)/);
+  const rawMediaType = mediaTypeMatch ? mediaTypeMatch[1] : "image/jpeg";
+  let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
+  if (rawMediaType === "image/png") mediaType = "image/png";
+  else if (rawMediaType === "image/gif") mediaType = "image/gif";
+  else if (rawMediaType === "image/webp") mediaType = "image/webp";
+  content.push({ type: "image", source: { type: "base64", media_type: mediaType, data } });
+}
+
+function buildContent(prompt: string, image?: string, images?: string[]): ContentBlock[] {
   const content: ContentBlock[] = [];
-  if (image && image.startsWith("data:")) {
-    const commaIdx = image.indexOf(",");
-    const header = image.slice(0, commaIdx);
-    const data = image.slice(commaIdx + 1);
-    const mediaTypeMatch = header.match(/data:([^;]+)/);
-    const rawMediaType = mediaTypeMatch ? mediaTypeMatch[1] : "image/jpeg";
-    let mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" = "image/jpeg";
-    if (rawMediaType === "image/png") mediaType = "image/png";
-    else if (rawMediaType === "image/gif") mediaType = "image/gif";
-    else if (rawMediaType === "image/webp") mediaType = "image/webp";
-    content.push({ type: "image", source: { type: "base64", media_type: mediaType, data } });
+  if (Array.isArray(images) && images.length > 0) {
+    images.forEach((img) => pushImageBlock(content, img));
+  } else if (image) {
+    pushImageBlock(content, image);
   }
   content.push({ type: "text", text: prompt });
   return content;
 }
 
-const VALID_ACTIONS: ActionType[] = ["journal_created", "rewrite_single", "rewrite_batch_photo"];
+const VALID_ACTIONS: ActionType[] = ["journal_created", "rewrite_single", "rewrite_batch_photo", "trip_brief_generate"];
 
 export async function POST(req: Request) {
   const userId = await getUserIdFromAuth(req);
   const body = await req.json();
-  const { prompt, maxTokens = 1000, image } = body;
+  const { prompt, maxTokens = 1000, image, images } = body;
   const actionType: ActionType = (VALID_ACTIONS.includes(body.actionType)
     ? body.actionType
     : "rewrite_single") as ActionType;
@@ -211,7 +218,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const content = buildContent(prompt, image);
+  const content = buildContent(prompt, image, Array.isArray(images) ? images : undefined);
 
   const runWith = async (model: string) => {
     const message = await client.messages.create({

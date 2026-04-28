@@ -16,7 +16,7 @@ export const COOLDOWN_HITS = 10;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-export type ActionType = "journal_created" | "rewrite_single" | "rewrite_batch_photo";
+export type ActionType = "journal_created" | "rewrite_single" | "rewrite_batch_photo" | "trip_brief_generate";
 const REWRITE_ACTIONS: ActionType[] = ["rewrite_single", "rewrite_batch_photo"];
 
 export interface RateLimitInfo {

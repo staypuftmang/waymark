@@ -61,3 +61,37 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.src = src;
   });
 }
+
+/**
+ * Resize an existing data-URL image down to `maxLongSide` on the longest
+ * dimension and re-encode as low-quality JPEG. Used to produce cheap
+ * thumbnails for AI-vision calls where we only need to identify scenes
+ * (a market, a temple, a beach) — not read fine details. Returns the
+ * original on failure.
+ */
+export async function makeThumbnail(
+  dataUrl: string,
+  maxLongSide = 400,
+  quality = 0.7,
+): Promise<string> {
+  try {
+    const img = await loadImage(dataUrl);
+    const longSide = Math.max(img.naturalWidth, img.naturalHeight);
+    if (longSide <= maxLongSide) return dataUrl;
+    const scale = maxLongSide / longSide;
+    const w = Math.round(img.naturalWidth * scale);
+    const h = Math.round(img.naturalHeight * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    const out = canvas.toDataURL("image/jpeg", quality);
+    return out && out.length > 100 ? out : dataUrl;
+  } catch {
+    return dataUrl;
+  }
+}

@@ -26,6 +26,29 @@ function truncateBrief(brief: string): string {
   return brief.length > 200 ? brief.substring(0, 200) + "..." : brief;
 }
 
+/**
+ * Prompt for the AI Trip Brief Generator (Quick Create). Looks at a batch of
+ * low-res photos plus any context the user has filled in (title / dates),
+ * and returns a 2-3 sentence first-person brief that sets the tone for the
+ * journal generation. Output is plain text (no JSON).
+ */
+export function tripBriefFromPhotosPrompt(
+  title: string,
+  dates: string,
+  photoCount: number,
+): string {
+  const ctxParts: string[] = [];
+  if (title) ctxParts.push(`Trip title: "${title}"`);
+  if (dates) ctxParts.push(`Dates: ${dates}`);
+  const ctx = ctxParts.length ? `\n\nCONTEXT:\n- ${ctxParts.join("\n- ")}` : "";
+
+  return `You are helping someone write a trip brief for their travel journal. Look at all the photos together and write a 2-3 sentence brief that captures the essence of this trip — the mood, the highlights, the emotional through-line. Write in first person. Be specific about what you see in the photos but keep it concise. This brief will be used as context for a longer AI-generated journal, so it should set the tone without telling the whole story. Do NOT list what's in each photo. Write it as one flowing thought.${ctx}
+
+You're looking at ${photoCount} photo${photoCount === 1 ? "" : "s"} from this trip.
+
+Return ONLY the brief — no preamble, no quotes, no JSON, no markdown. Just the 2-3 sentences.`;
+}
+
 function tripContext(title: string, brief: string, dates: string): string {
   const parts = [`- Trip title: "${title}"`];
   if (brief) parts.push(`- Trip story: "${truncateBrief(brief)}"`);

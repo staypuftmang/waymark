@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-export type AiActionType = "journal_created" | "rewrite_single" | "rewrite_batch_photo";
+export type AiActionType = "journal_created" | "rewrite_single" | "rewrite_batch_photo" | "trip_brief_generate";
 export type RateLimitType =
   | "hourly"
   | "daily"
@@ -69,16 +69,25 @@ export interface AiCallOptions {
   surfaceRateLimit?: boolean;
 }
 
+export interface AiCallExtra {
+  /** Multiple images, in order. Takes precedence over `image` if both passed. */
+  images?: string[];
+  /** Override max output tokens (default 1000). */
+  maxTokens?: number;
+}
+
 export async function aiCall(
   prompt: string,
   image?: string,
-  opts: AiCallOptions = {},
+  opts: AiCallOptions & AiCallExtra = {},
 ): Promise<string> {
   const maxRetries = 2;
   const actionType = opts.actionType ?? "rewrite_single";
   const journalId = opts.journalId ?? null;
   const record = opts.record !== false;
   const surface = opts.surfaceRateLimit !== false;
+  const images = opts.images;
+  const maxTokens = opts.maxTokens ?? 1000;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -86,7 +95,7 @@ export async function aiCall(
       const r = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...auth },
-        body: JSON.stringify({ prompt, maxTokens: 1000, image, actionType, journalId, record }),
+        body: JSON.stringify({ prompt, maxTokens, image, images, actionType, journalId, record }),
       });
 
       if (r.status === 429) {

@@ -4,8 +4,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
-import { quickCreatePrompt } from "@/app/lib/prompts";
+import { quickCreatePrompt, tripBriefFromPhotosPrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
+import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useHistory, ContentSnapshot } from "@/app/lib/history";
@@ -300,6 +301,10 @@ export default function Page() {
   const [rateLimitModal, setRateLimitModal] = useState<RateLimitErrorInfo | null>(null);
   const [rateStatus, setRateStatus] = useState<RateLimitStatus | null>(null);
   const rateWarningShownRef = useRef(false);
+
+  // AI Trip Brief Generator state
+  const [briefGenerating, setBriefGenerating] = useState(false);
+  const [briefReplaceConfirm, setBriefReplaceConfirm] = useState<string | null>(null);
 
   // Proactively refresh rate-limit status on auth/page changes so the
   // "X generations remaining today" indicator stays live across navigation,
@@ -935,6 +940,45 @@ export default function Page() {
       : formatDate(startDate)
     : "";
 
+  const runBriefGenerate = useCallback(async () => {
+    if (briefGenerating || photos.length === 0) return;
+    setBriefGenerating(true);
+    try {
+      const thumbs = await Promise.all(photos.map((p) => makeThumbnail(p.src, 400, 0.7)));
+      const prompt = tripBriefFromPhotosPrompt(tripTitle, dateDisplay, photos.length);
+      const text = await aiCall(prompt, undefined, {
+        actionType: "trip_brief_generate",
+        images: thumbs,
+        maxTokens: 320,
+      });
+      const cleaned = (text || "").trim().replace(/^"|"$/g, "");
+      if (!cleaned) {
+        setToast("Couldn't generate brief \u2014 try again or write your own.");
+        setTimeout(() => setToast(null), 4000);
+        return;
+      }
+      saveToHistory();
+      setTripBrief(cleaned);
+    } catch (err) {
+      console.error("Brief generate failed:", err);
+      setToast("Couldn't generate brief \u2014 try again or write your own.");
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setBriefGenerating(false);
+    }
+    // saveToHistory is stable; the rest are direct deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefGenerating, photos, tripTitle, dateDisplay]);
+
+  const onClickGenerateBrief = useCallback(() => {
+    if (briefGenerating || photos.length === 0) return;
+    if (tripBrief.trim()) {
+      setBriefReplaceConfirm(tripBrief);
+      return;
+    }
+    void runBriefGenerate();
+  }, [briefGenerating, photos.length, tripBrief, runBriefGenerate]);
+
   const ok = tripTitle.trim() && photos.length > 0;
 
   // True once any photo carries AI output — signals "returning journal" and
@@ -1299,6 +1343,33 @@ export default function Page() {
         </div>
       )}
 
+      {briefReplaceConfirm !== null && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 6, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              Replace your current brief?
+            </div>
+            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              The AI will write a new brief from your photos. Your current text will be replaced.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setBriefReplaceConfirm(null)}
+                style={{ ...btnSecondary, fontSize: 13 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setBriefReplaceConfirm(null); void runBriefGenerate(); }}
+                style={{ ...btnPrimary, fontSize: 13 }}
+              >
+                Replace
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════════════ TOAST ═══════════════ */}
       {toast && (
         <div
@@ -1637,7 +1708,48 @@ export default function Page() {
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Your Story</label>
+              <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>Your Story</label>
+                {photos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClickGenerateBrief}
+                    disabled={briefGenerating}
+                    className="bg-transparent border-none cursor-pointer font-body"
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-stone)",
+                      padding: "2px 4px",
+                      opacity: briefGenerating ? 0.7 : 1,
+                      cursor: briefGenerating ? "wait" : "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    title="Use your photos to draft a trip story"
+                  >
+                    {briefGenerating ? (
+                      <>
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: "50%",
+                            border: "1.5px solid var(--color-stone)",
+                            borderTopColor: "transparent",
+                            display: "inline-block",
+                            animation: "spin 0.8s linear infinite",
+                          }}
+                        />
+                        Writing…
+                      </>
+                    ) : (
+                      <>{"✨"} Write from my photos</>
+                    )}
+                  </button>
+                )}
+              </div>
               <textarea
                 style={{ ...iStyle, resize: "vertical", minHeight: 120, lineHeight: 1.65 }}
                 placeholder="What made this trip special? The people, the food, the unexpected moments..."
