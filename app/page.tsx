@@ -24,6 +24,7 @@ import SiteFooter from "@/app/components/SiteFooter";
 import AuthModal from "@/app/components/AuthModal";
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
+import AiButton from "@/app/components/AiButton";
 import SignupPromptPanel from "@/app/components/SignupPromptPanel";
 import { useAuth } from "@/app/lib/AuthContext";
 import {
@@ -1711,43 +1712,12 @@ export default function Page() {
               <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }}>Your Story</label>
                 {photos.length > 0 && (
-                  <button
-                    type="button"
+                  <AiButton
                     onClick={onClickGenerateBrief}
-                    disabled={briefGenerating}
-                    className="bg-transparent border-none cursor-pointer font-body"
-                    style={{
-                      fontSize: 12,
-                      color: "var(--color-stone)",
-                      padding: "2px 4px",
-                      opacity: briefGenerating ? 0.7 : 1,
-                      cursor: briefGenerating ? "wait" : "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                    title="Use your photos to draft a trip story"
-                  >
-                    {briefGenerating ? (
-                      <>
-                        <span
-                          aria-hidden
-                          style={{
-                            width: 12,
-                            height: 12,
-                            borderRadius: "50%",
-                            border: "1.5px solid var(--color-stone)",
-                            borderTopColor: "transparent",
-                            display: "inline-block",
-                            animation: "spin 0.8s linear infinite",
-                          }}
-                        />
-                        Writing…
-                      </>
-                    ) : (
-                      <>{"✨"} Write from my photos</>
-                    )}
-                  </button>
+                    loading={briefGenerating}
+                    label="Describe my trip"
+                    small
+                  />
                 )}
               </div>
               <textarea
