@@ -310,7 +310,7 @@ export default function JournalPreview({
               width: "100%",
               maxWidth: 960,
               margin: "0 auto",
-              aspectRatio: "16 / 9",
+              aspectRatio: "3 / 2",
               borderRadius: vs.bg === "#0F0F0F" || vk === "brutalist" ? 0 : 5,
               overflow: "hidden",
             }}
