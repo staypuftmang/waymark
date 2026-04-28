@@ -6,11 +6,37 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
- * Prepare the journal DOM for capture: hide chrome, tighten cover, expand filmstrip.
- * Returns a restore function to undo all changes.
+ * Width we lay the journal out at while capturing, regardless of viewport.
+ * Lock to a single desktop width so a phone download looks identical to a
+ * laptop download — same proportions, same line breaks, same hero crop.
+ */
+export const CAPTURE_WIDTH = 1200;
+
+/**
+ * Prepare the journal DOM for capture: pin layout to desktop width, hide
+ * chrome, tighten cover, expand filmstrip. Returns a restore function to
+ * undo all changes.
  */
 function prepareForCapture(element: HTMLElement) {
   const originals: Array<() => void> = [];
+
+  // Pin the journal root to a fixed desktop width so the layout renders the
+  // same proportions everywhere — without this, mobile viewports collapse the
+  // hero photo and column widths and html2canvas captures the squished result.
+  const origW = element.style.width;
+  const origMinW = element.style.minWidth;
+  const origMaxW = element.style.maxWidth;
+  const origOX = element.style.overflowX;
+  element.style.width = `${CAPTURE_WIDTH}px`;
+  element.style.minWidth = `${CAPTURE_WIDTH}px`;
+  element.style.maxWidth = `${CAPTURE_WIDTH}px`;
+  element.style.overflowX = "hidden";
+  originals.push(() => {
+    element.style.width = origW;
+    element.style.minWidth = origMinW;
+    element.style.maxWidth = origMaxW;
+    element.style.overflowX = origOX;
+  });
 
   // Hide every [data-export-hide] element during capture, regardless of its
   // value ("top", "refine", "links", …). Keeps the capture logic generic.
@@ -44,6 +70,31 @@ function prepareForCapture(element: HTMLElement) {
       cover.style.maxWidth = origMW;
       cover.style.margin = origM;
     });
+
+    // Some mobile browsers don't fully resolve `aspect-ratio` during the
+    // html2canvas layout pass — the hero ends up at width × 0 (or stretched).
+    // Pin an explicit width × height (16:9) on the hero box so the captured
+    // photo is always the same proportions as on desktop. We only do this
+    // when the cover is the photo variant (has an <img>); the no-photo
+    // fallback uses the same wrapper but doesn't need the fixed hero.
+    if (cover.querySelector("img")) {
+      const hero = cover.querySelector(":scope > div") as HTMLElement | null;
+      if (hero) {
+        const HERO_W = 960;
+        const HERO_H = Math.round((HERO_W * 9) / 16);
+        const ow = hero.style.width;
+        const oh = hero.style.height;
+        const oar = hero.style.aspectRatio;
+        hero.style.width = `${HERO_W}px`;
+        hero.style.height = `${HERO_H}px`;
+        hero.style.aspectRatio = "auto";
+        originals.push(() => {
+          hero.style.width = ow;
+          hero.style.height = oh;
+          hero.style.aspectRatio = oar;
+        });
+      }
+    }
   }
 
   // Expand filmstrip so every photo captures — not just the visible slice.
@@ -122,6 +173,9 @@ async function captureUnit(
     useCORS: true,
     backgroundColor: bgColor,
     logging: false,
+    // Force html2canvas to lay everything out at desktop width — without this
+    // mobile viewport widths leak into the capture and squash the hero photo.
+    windowWidth: CAPTURE_WIDTH,
   });
   const ratio = contentWidth / canvas.width;
   return {
@@ -263,17 +317,17 @@ export async function exportImage(elementId: string, title: string, bgColor: str
 
   const restore = prepareForCapture(element);
 
-  // Capture the full element box. Passing explicit width + windowWidth keeps
-  // wide cover content (title overlay, trip brief) from being clipped at
-  // narrower viewports; height + windowHeight likewise capture the full
-  // scrollable journal regardless of what's currently in view.
+  // Capture at a fixed desktop width regardless of device viewport so a
+  // mobile download matches the desktop output. prepareForCapture has
+  // already pinned #journal-root to CAPTURE_WIDTH; we mirror that here so
+  // html2canvas's internal layout pass uses the same width.
   const canvas = await html2canvas(element, {
     scale: captureScale(),
     useCORS: true,
     backgroundColor: bgColor,
-    width: element.scrollWidth,
+    width: CAPTURE_WIDTH,
     height: element.scrollHeight,
-    windowWidth: element.scrollWidth,
+    windowWidth: CAPTURE_WIDTH,
     windowHeight: element.scrollHeight,
     logging: false,
   });
