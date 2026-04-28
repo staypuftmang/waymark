@@ -12,11 +12,6 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().substring(0, 100);
 }
 
-function captureScale(): number {
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  return Math.max(2, dpr * 2);
-}
-
 function isMobileBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   const touch = navigator.maxTouchPoints > 0;
@@ -24,54 +19,39 @@ function isMobileBrowser(): boolean {
   return touch && ua;
 }
 
+function captureScale(): number {
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  // Mobile Safari blows up canvases past ~16M pixels and silently drops the
+  // capture. Cap mobile scale at 2 — still sharp on Retina, well under the
+  // memory ceiling. Desktop keeps the higher scale for crisp text exports.
+  if (isMobileBrowser()) return 2;
+  return Math.max(2, dpr * 2);
+}
+
 /**
- * Hand a generated file to the OS. On mobile (iOS Safari especially) the
- * blob-URL + hidden-anchor trick fails silently or with WebKitBlobResource
- * errors, so we use Web Share API when available and fall back to a data
- * URL opened in a new tab — both of which Safari handles correctly. On
- * desktop the anchor-download approach is fastest and most familiar.
+ * Hand a generated file to the OS.
+ *
+ * Mobile (iOS Safari especially): post-await calls to navigator.share /
+ * window.open lose the user-gesture context and Safari silently blocks
+ * them, so the previous "Web Share API + data-URL fallback" path failed
+ * with no visible feedback. Instead, navigate the current tab to the blob
+ * URL — Safari renders PDFs and PNGs inline, where the user can use the
+ * native share sheet (square + arrow) to save to Photos / Files / etc.
+ * The journal is one back-tap away.
+ *
+ * Desktop: classic blob-URL + anchor-click download for the in-place feel.
  */
-async function deliverFile(blob: Blob, filename: string, mimeType: string): Promise<void> {
-  const mobile = isMobileBrowser();
+async function deliverFile(blob: Blob, filename: string, _mimeType: string): Promise<void> {
+  const url = URL.createObjectURL(blob);
 
-  if (mobile) {
-    type ShareNavigator = Navigator & {
-      share?: (data: ShareData) => Promise<void>;
-      canShare?: (data: ShareData) => boolean;
-    };
-    const nav = navigator as ShareNavigator;
-    if (typeof nav.share === "function") {
-      try {
-        const file = new File([blob], filename, { type: mimeType });
-        if (!nav.canShare || nav.canShare({ files: [file] })) {
-          await nav.share({ files: [file], title: filename });
-          return;
-        }
-      } catch (err) {
-        // User cancellation is expected; bail without falling through.
-        if (err instanceof Error && err.name === "AbortError") return;
-        // Any other Web Share error: try the data-URL fallback below.
-      }
-    }
-
-    // Data-URL fallback. Safari renders data: URLs inline (PDF/PNG both),
-    // letting the user invoke the native share sheet from there.
-    const dataUrl: string = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    const opened = window.open(dataUrl, "_blank");
-    if (!opened) {
-      // Popup blocked — last-resort: navigate the current tab.
-      window.location.href = dataUrl;
-    }
+  if (isMobileBrowser()) {
+    // Don't revoke immediately — Safari needs the URL alive across the
+    // navigation. 60s is comfortably past any plausible render time.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    window.location.assign(url);
     return;
   }
 
-  // Desktop: classic blob-URL + anchor-click download.
-  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
