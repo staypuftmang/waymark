@@ -15,7 +15,7 @@ const CATEGORIES: { key: Category; label: string }[] = [
 ];
 
 const OPEN_EVENT = "wm:open-feedback";
-const ATTACHMENTS_BUCKET = "feedback-attachments";
+const ATTACHMENTS_BUCKET = "Feedback-Attachments";
 const MAX_ATTACHMENTS = 2;
 const MAX_BYTES = 5 * 1024 * 1024;
 

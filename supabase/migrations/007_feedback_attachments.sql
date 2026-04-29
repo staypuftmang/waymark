@@ -15,23 +15,23 @@ alter table public.feedback
 -- screenshots are visible to anyone with the URL" — same as the journal
 -- /j/[slug] sharing model.
 insert into storage.buckets (id, name, public)
-values ('feedback-attachments', 'feedback-attachments', true)
+values ('Feedback-Attachments', 'Feedback-Attachments', true)
 on conflict (id) do nothing;
 
 -- Storage policies: writes are open (any role), reads are public.
 -- Updates and deletes have no policy → service-role-only.
 
-create policy "feedback-attachments: anon insert"
+create policy "Feedback-Attachments: anon insert"
 on storage.objects for insert
 to anon
-with check (bucket_id = 'feedback-attachments');
+with check (bucket_id = 'Feedback-Attachments');
 
-create policy "feedback-attachments: auth insert"
+create policy "Feedback-Attachments: auth insert"
 on storage.objects for insert
 to authenticated
-with check (bucket_id = 'feedback-attachments');
+with check (bucket_id = 'Feedback-Attachments');
 
-create policy "feedback-attachments: public read"
+create policy "Feedback-Attachments: public read"
 on storage.objects for select
 to anon, authenticated
-using (bucket_id = 'feedback-attachments');
+using (bucket_id = 'Feedback-Attachments');
