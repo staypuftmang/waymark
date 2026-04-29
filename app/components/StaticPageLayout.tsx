@@ -33,6 +33,19 @@ export default function StaticPageLayout({ title, lastUpdated, children }: Stati
         >
           Waymark
         </Link>
+        <Link
+          href="/help"
+          className="font-body"
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--color-paper)",
+            opacity: 0.75,
+            textDecoration: "none",
+          }}
+        >
+          Help
+        </Link>
       </div>
 
       <main

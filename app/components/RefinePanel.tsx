@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { VisualStyle, VisualStyleKey, LayoutKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 
@@ -15,6 +15,18 @@ interface RefinePanelProps {
 
 export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: RefinePanelProps) {
   const [open, setOpen] = useState(false);
+
+  // Push the global feedback FAB out of the way on the journal preview:
+  // closed (just the small pencil button) → bump up by 56px; open (full
+  // bottom panel) → push fully off-screen so it can't collide with the
+  // panel content. Cleared on unmount.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--wm-fab-bottom-offset", open ? "9999px" : "56px");
+    return () => {
+      root.style.removeProperty("--wm-fab-bottom-offset");
+    };
+  }, [open]);
 
   if (!open) {
     return (

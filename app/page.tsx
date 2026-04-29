@@ -190,6 +190,20 @@ function Header({
       <div className="flex items-center" style={{ gap: 8 }}>
         {history && <UndoRedoButtons {...history} />}
         {right || null}
+        <a
+          href="/help"
+          className="font-body"
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--color-paper)",
+            opacity: 0.7,
+            textDecoration: "none",
+            padding: "6px 4px",
+          }}
+        >
+          Help
+        </a>
         {(onSignInClick || onSignUpClick) && (
           <HeaderAuthControls
             onSignInClick={onSignInClick ?? (() => {})}

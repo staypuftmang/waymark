@@ -3,6 +3,7 @@ import { Fraunces, Manrope } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { AuthProvider } from "@/app/lib/AuthContext";
+import FeedbackWidget from "@/app/components/FeedbackWidget";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -60,6 +61,7 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           {children}
+          <FeedbackWidget />
           <Analytics />
         </AuthProvider>
       </body>
