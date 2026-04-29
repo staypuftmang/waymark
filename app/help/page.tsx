@@ -66,20 +66,6 @@ export default function HelpPage() {
         >
           Waymark
         </Link>
-        <Link
-          href="/help"
-          className="font-body"
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: "var(--color-paper)",
-            opacity: 0.9,
-            textDecoration: "none",
-          }}
-          aria-current="page"
-        >
-          Help
-        </Link>
       </div>
 
       <main

@@ -22,6 +22,10 @@ export default function SiteFooter({ className = "" }: { className?: string }) {
       <Link href="/terms" style={{ color: "inherit", textDecoration: "none" }}>
         Terms
       </Link>
+      <span style={{ margin: "0 6px", opacity: 0.5 }}>·</span>
+      <Link href="/help" style={{ color: "inherit", textDecoration: "none" }}>
+        Help
+      </Link>
     </div>
   );
 }
