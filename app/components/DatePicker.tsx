@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { MONTHS, daysInMonth, formatDate } from "@/app/lib/constants";
 
 interface DatePickerProps {
@@ -14,8 +14,39 @@ export default function DatePicker({ startDate, endDate, onStartChange, onEndCha
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<"start" | "end">("start");
   const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const openPicker = () => {
+    const focusDate = startDate ?? new Date();
+    setViewYear(focusDate.getFullYear());
+    setViewMonth(focusDate.getMonth());
+    setSel("start");
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  const isToday = (d: number | null) =>
+    d !== null && new Date(viewYear, viewMonth, d).toDateString() === today.toDateString();
 
   const daysCount = daysInMonth(viewYear, viewMonth);
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
@@ -65,11 +96,11 @@ export default function DatePicker({ startDate, endDate, onStartChange, onEndCha
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapperRef}>
       <div
         className="w-full border border-border bg-card font-body cursor-pointer flex items-center gap-2"
         style={{ padding: "11px 14px", borderRadius: 5, fontSize: 14 }}
-        onClick={() => { setOpen(!open); setSel("start"); }}
+        onClick={() => (open ? setOpen(false) : openPicker())}
       >
         <span className="opacity-40" style={{ fontSize: 13 }}>&#x1F4C5;</span>
         <span style={{ color: startDate ? "var(--color-ink)" : "var(--color-warm)" }}>{label}</span>
@@ -120,9 +151,10 @@ export default function DatePicker({ startDate, endDate, onStartChange, onEndCha
                       height: 32,
                       borderRadius: isStart(d) || isEnd(d) ? 16 : inRange(d) ? 0 : 16,
                       fontSize: 12,
-                      fontWeight: isStart(d) || isEnd(d) ? 700 : 400,
+                      fontWeight: isStart(d) || isEnd(d) || isToday(d) ? 700 : 400,
                       background: isStart(d) || isEnd(d) ? "var(--color-accent)" : inRange(d) ? "rgba(154,52,18,.1)" : "transparent",
-                      color: isStart(d) || isEnd(d) ? "#fff" : "var(--color-ink)",
+                      color: isStart(d) || isEnd(d) ? "#fff" : isToday(d) ? "var(--color-accent)" : "var(--color-ink)",
+                      border: isToday(d) && !isStart(d) && !isEnd(d) ? "1px solid var(--color-accent)" : "none",
                     }}
                   >
                     {d}
