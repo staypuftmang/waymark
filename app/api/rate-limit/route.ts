@@ -29,10 +29,22 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const journalId = url.searchParams.get("journal");
 
+    let ownedJournalId: string | null = null;
+    if (journalId) {
+      const { data: row } = await supabaseAdmin
+        .from("journals")
+        .select("user_id")
+        .eq("id", journalId)
+        .maybeSingle();
+      if (row && (row as { user_id: string }).user_id === userId) {
+        ownedJournalId = journalId;
+      }
+    }
+
     const [umbrella, journals, rewrites] = await Promise.all([
       checkUserRateLimit(userId),
       checkJournalCreationLimit(userId),
-      journalId ? checkJournalRewriteLimit(journalId) : Promise.resolve(null),
+      ownedJournalId ? checkJournalRewriteLimit(ownedJournalId) : Promise.resolve(null),
     ]);
 
     return Response.json({

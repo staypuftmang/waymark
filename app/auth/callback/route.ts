@@ -13,10 +13,19 @@ import { createClient } from "@supabase/supabase-js";
  * and the client side can pick up the resulting session from localStorage
  * via supabase.auth.getSession().
  */
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  // Must be a single-leading-slash path: rejects "//evil.com", "/\evil.com",
+  // protocol-relative URLs, and absolute URLs of any scheme.
+  if (!raw.startsWith("/")) return "/";
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+  return raw;
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  const next = safeNext(searchParams.get("next"));
 
   if (code) {
     const supabase = createClient(
