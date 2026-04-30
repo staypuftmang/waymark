@@ -87,8 +87,6 @@ export default function JournalPreview({
   };
   const [exporting, setExporting] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const mobileDropdownRef = useRef<HTMLDivElement>(null);
-  const [mobileDownloadOpen, setMobileDownloadOpen] = useState(false);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -101,36 +99,6 @@ export default function JournalPreview({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [downloadOpen]);
-
-  useEffect(() => {
-    if (!mobileDownloadOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (mobileDropdownRef.current && !mobileDropdownRef.current.contains(e.target as Node)) {
-        setMobileDownloadOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [mobileDownloadOpen]);
-
-  // While the mobile bottom action bar is mounted (preview is visible on
-  // <768px), push the global feedback FAB above it. Cleared on unmount or
-  // when viewport crosses ≥768px.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const root = document.documentElement;
-    const mq = window.matchMedia("(max-width: 767px)");
-    const apply = () => {
-      if (mq.matches) root.style.setProperty("--wm-fab-bottom-offset", "72px");
-      else root.style.removeProperty("--wm-fab-bottom-offset");
-    };
-    apply();
-    mq.addEventListener("change", apply);
-    return () => {
-      mq.removeEventListener("change", apply);
-      root.style.removeProperty("--wm-fab-bottom-offset");
-    };
-  }, []);
 
   const handleExportPDF = async () => {
     setExporting("pdf");
@@ -158,24 +126,18 @@ export default function JournalPreview({
 
   return (
     <div id="journal-root" style={{ minHeight: "100vh", background: vs.bg, color: vs.fg }}>
-      {/* Sticky header — desktop only. Mobile uses the bottom action bar below. */}
+      {/* Sticky header. WAYMARK left, action cluster right (Download · Share ·
+          style label · auth). Edit removed — back to editor lives in the
+          Refine panel's "Back" button. */}
       <div
         data-export-hide="top"
-        className="hidden md:flex sticky top-0 z-[100] justify-between items-center"
+        className="sticky top-0 z-[100] flex justify-between items-center"
         style={{ background: vs.fg, color: vs.bg, padding: "10px 20px", fontSize: 11 }}
       >
         <button
-          onClick={onEdit}
-          className="bg-transparent border-none cursor-pointer"
-          style={{ color: "inherit", fontSize: 11, opacity: 0.7 }}
-        >
-          &#x2190; Edit
-        </button>
-
-        <button
           onClick={onLogoClick}
           className="font-title bg-transparent border-none cursor-pointer"
-          style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.5, color: "inherit", padding: 0 }}
+          style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.7, color: "inherit", padding: 0 }}
         >
           Waymark
         </button>
@@ -535,9 +497,8 @@ export default function JournalPreview({
         </div>
       </div>
 
-      {/* Refine panel — desktop only. The mobile bottom action bar takes
-          its place; style/layout switching on mobile lives in the Edit flow. */}
-      <div data-export-hide="refine" className="hidden md:block">
+      {/* Refine panel */}
+      <div data-export-hide="refine">
         <RefinePanel
           vs={vs}
           vk={vk}
@@ -546,173 +507,6 @@ export default function JournalPreview({
           setLo={setLo}
           onBack={onEdit}
         />
-      </div>
-
-      {/* Mobile sticky bottom action bar — left: Download, center: Edit,
-          right: auth. Hidden on desktop where the top header has it all. */}
-      <div
-        data-export-hide="mobile-bar"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-[150] flex items-center justify-between"
-        style={{
-          background: "var(--color-paper)",
-          color: "var(--color-ink)",
-          borderTop: "1px solid var(--color-border)",
-          padding: "10px 14px",
-          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
-          fontFamily: "var(--font-body)",
-        }}
-      >
-        {/* Download (left) */}
-        <div className="relative" ref={mobileDropdownRef}>
-          <button
-            onClick={() => setMobileDownloadOpen((v) => !v)}
-            disabled={!!exporting}
-            className="border-none cursor-pointer font-body"
-            style={{
-              minHeight: 44,
-              padding: "0 14px",
-              borderRadius: 6,
-              background: "var(--color-ink)",
-              color: "var(--color-paper)",
-              fontSize: 13,
-              fontWeight: 600,
-              opacity: exporting ? 0.6 : 1,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            {exporting
-              ? exporting === "pdf" ? "Generating PDF…" : "Generating image…"
-              : "↓ Download"}
-          </button>
-          {mobileDownloadOpen && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "calc(100% + 8px)",
-                left: 0,
-                background: "var(--color-card)",
-                border: "1px solid var(--color-border)",
-                borderRadius: 6,
-                boxShadow: "0 -8px 24px rgba(0,0,0,.12)",
-                minWidth: 180,
-                overflow: "hidden",
-                zIndex: 250,
-              }}
-            >
-              <button
-                onClick={() => { setMobileDownloadOpen(false); handleExportPDF(); }}
-                className="w-full text-left bg-transparent border-none cursor-pointer font-body"
-                style={{
-                  padding: "12px 16px",
-                  fontSize: 14,
-                  color: "var(--color-ink)",
-                  borderBottom: "1px solid var(--color-border)",
-                }}
-              >
-                Save as PDF
-              </button>
-              <button
-                onClick={() => { setMobileDownloadOpen(false); handleExportImage(); }}
-                className="w-full text-left bg-transparent border-none cursor-pointer font-body"
-                style={{
-                  padding: "12px 16px",
-                  fontSize: 14,
-                  color: "var(--color-ink)",
-                }}
-              >
-                Save Image
-              </button>
-              {!user && onSignUpClick && (
-                <button
-                  onClick={() => {
-                    setMobileDownloadOpen(false);
-                    track("signup_prompt_clicked", { trigger: "mobile_download_dropdown" });
-                    onSignUpClick();
-                  }}
-                  className="w-full text-left bg-transparent border-none cursor-pointer font-body"
-                  style={{
-                    padding: "12px 16px",
-                    fontSize: 12,
-                    color: "var(--color-ink)",
-                    opacity: 0.75,
-                    lineHeight: 1.5,
-                    borderTop: "1px solid var(--color-border)",
-                  }}
-                >
-                  Sign up to save this journal and access it from any device.
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Edit (center) */}
-        <button
-          onClick={onEdit}
-          className="border-none cursor-pointer font-body"
-          style={{
-            minHeight: 44,
-            padding: "0 14px",
-            borderRadius: 6,
-            background: "transparent",
-            color: "var(--color-ink)",
-            fontSize: 13,
-            fontWeight: 600,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          ← Edit
-        </button>
-
-        {/* Auth (right) */}
-        <div className="flex items-center" style={{ gap: 8, minHeight: 44 }}>
-          {user ? (
-            <HeaderAuthControls
-              onSignInClick={onSignInClick ?? (() => {})}
-              onSignUpClick={onSignUpClick ?? (() => {})}
-              onYourJournals={onYourJournals}
-            />
-          ) : (
-            <>
-              {onSignInClick && (
-                <button
-                  onClick={onSignInClick}
-                  className="bg-transparent border-none cursor-pointer font-body"
-                  style={{
-                    minHeight: 44,
-                    padding: "0 6px",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "var(--color-warm)",
-                  }}
-                >
-                  Sign in
-                </button>
-              )}
-              {onSignUpClick && (
-                <button
-                  onClick={onSignUpClick}
-                  className="border-none cursor-pointer font-body"
-                  style={{
-                    minHeight: 44,
-                    padding: "0 14px",
-                    borderRadius: 6,
-                    background: "var(--color-accent)",
-                    color: "#fff",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  Start free
-                </button>
-              )}
-            </>
-          )}
-        </div>
       </div>
 
 {/* click-outside overlay removed — dropdown closes via onBlur */}

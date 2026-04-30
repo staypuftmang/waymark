@@ -16,15 +16,11 @@ interface RefinePanelProps {
 export default function RefinePanel({ vs, vk, setVk, lo, setLo, onBack }: RefinePanelProps) {
   const [open, setOpen] = useState(false);
 
-  // Push the global feedback FAB out of the way on desktop:
+  // Push the global feedback FAB out of the way on the journal preview:
   // closed (just the small pencil button) → bump up by 56px; open (full
-  // bottom panel) → push fully off-screen. On mobile RefinePanel is hidden
-  // entirely (CSS-gated by the parent), and JournalPreview owns the FAB
-  // offset for the mobile bottom action bar — don't fight it from here.
+  // bottom panel) → push fully off-screen so it can't collide with the
+  // panel content. Cleared on unmount.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 767px)");
-    if (mq.matches) return;
     const root = document.documentElement;
     root.style.setProperty("--wm-fab-bottom-offset", open ? "9999px" : "56px");
     return () => {
