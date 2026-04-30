@@ -32,8 +32,8 @@ const FAQS = [
   },
   {
     id: "photo-privacy",
-    q: "Are my photos private?",
-    a: "Photos are analyzed by AI to write about them but are not stored permanently or shared. Only journals you explicitly make public are visible to others.",
+    q: "Where do my photos go?",
+    a: "When you upload, photos stay in your browser until you tap a generate or rewrite button, that sends them to our AI provider so it can write about them. If you sign in and save, we keep the photos in your private journal until you delete it. Nothing is shared publicly unless you explicitly make a journal public.",
   },
   {
     id: "share-journal",

@@ -1756,7 +1756,7 @@ export default function Page() {
               className="font-body text-stone flex items-center justify-center gap-1.5"
               style={{ fontSize: 12, marginTop: 8, lineHeight: 1.5, opacity: 0.75 }}
             >
-              <span>Your photos are processed securely and never shared.</span>
+              <span>Your photos stay in your browser until you generate.</span>
               <Link
                 href="/help#photo-privacy"
                 className="text-stone underline"
@@ -2175,7 +2175,7 @@ export default function Page() {
             className="font-body text-stone flex items-center justify-center gap-1.5"
             style={{ fontSize: 12, marginTop: 8, lineHeight: 1.5, opacity: 0.75 }}
           >
-            <span>Your photos are processed securely and never shared.</span>
+            <span>Your photos stay in your browser until you generate.</span>
             <Link
               href="/help#photo-privacy"
               className="text-stone underline"
