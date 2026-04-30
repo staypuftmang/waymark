@@ -164,11 +164,10 @@ export default function PublicJournalView({
                 lineHeight: 1.8,
                 maxWidth: 540,
                 margin: "32px auto 0",
-                opacity: 0.85,
+                opacity: 0.8,
                 fontStyle: vk === "editorial" ? "italic" : "normal",
                 whiteSpace: "pre-line",
                 textAlign: "center",
-                textShadow: "0 2px 8px rgba(0,0,0,0.6)",
               }}
             >
               {tripBrief}
