@@ -266,7 +266,7 @@ export default function JournalPreview({
             </div>
           )}
 
-          <span style={{ opacity: 0.4, fontSize: 10 }}>
+          <span className="hidden md:inline" style={{ opacity: 0.4, fontSize: 10 }}>
             {vs.label} / {LO[lo].label}
           </span>
 
