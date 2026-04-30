@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 
@@ -25,9 +26,17 @@ function checkShareLimit(userId: string): { allowed: boolean; resetInSeconds: nu
 }
 
 function generateSlug(): string {
+  // Rejection sampling on cryptographic random bytes to avoid the small
+  // modulo bias of `bytes[i] % 36`. We pull more bytes than needed and
+  // skip any that fall outside the largest multiple of 36 ≤ 256.
+  const LIMIT = 252; // 36 * 7 — largest multiple of 36 ≤ 255
   let slug = "";
-  for (let i = 0; i < 8; i++) {
-    slug += SLUG_CHARS.charAt(Math.floor(Math.random() * SLUG_CHARS.length));
+  while (slug.length < 8) {
+    const bytes = randomBytes(16);
+    for (let i = 0; i < bytes.length && slug.length < 8; i++) {
+      const b = bytes[i];
+      if (b < LIMIT) slug += SLUG_CHARS.charAt(b % SLUG_CHARS.length);
+    }
   }
   return slug;
 }
