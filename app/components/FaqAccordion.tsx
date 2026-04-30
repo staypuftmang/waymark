@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface FaqItem {
+  id?: string;
   q: string;
   a: string;
 }
@@ -13,6 +14,26 @@ interface FaqAccordionProps {
 
 export default function FaqAccordion({ items }: FaqAccordionProps) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const applyHash = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (!hash) return;
+      const idx = items.findIndex((it) => it.id === hash);
+      if (idx === -1) return;
+      setOpenIdx(idx);
+      const el = itemRefs.current[idx];
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, [items]);
 
   return (
     <div>
@@ -21,8 +42,13 @@ export default function FaqAccordion({ items }: FaqAccordionProps) {
         return (
           <div
             key={i}
+            id={item.id}
+            ref={(el) => {
+              itemRefs.current[i] = el;
+            }}
             style={{
               borderBottom: "1px solid var(--color-border)",
+              scrollMarginTop: 80,
             }}
           >
             <button

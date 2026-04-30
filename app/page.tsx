@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import Link from "next/link";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
@@ -1751,6 +1752,20 @@ export default function Page() {
               <input ref={quickRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
             </div>
 
+            <div
+              className="font-body text-stone flex items-center justify-center gap-1.5"
+              style={{ fontSize: 12, marginTop: 8, lineHeight: 1.5, opacity: 0.75 }}
+            >
+              <span>Your photos are processed securely and never shared.</span>
+              <Link
+                href="/help#photo-privacy"
+                className="text-stone underline"
+                style={{ textDecorationColor: "var(--color-border)", textUnderlineOffset: 2 }}
+              >
+                Learn more
+              </Link>
+            </div>
+
             {photos.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <div className="text-ink font-semibold" style={{ fontSize: 13, marginBottom: 4 }}>
@@ -2154,6 +2169,20 @@ export default function Page() {
               <HelperText>Best with 5–20 photos.</HelperText>
             )}
             <input ref={fullRef} type="file" accept="image/*" multiple className="hidden" onChange={addPhotos} disabled={atHardCap} />
+          </div>
+
+          <div
+            className="font-body text-stone flex items-center justify-center gap-1.5"
+            style={{ fontSize: 12, marginTop: 8, lineHeight: 1.5, opacity: 0.75 }}
+          >
+            <span>Your photos are processed securely and never shared.</span>
+            <Link
+              href="/help#photo-privacy"
+              className="text-stone underline"
+              style={{ textDecorationColor: "var(--color-border)", textUnderlineOffset: 2 }}
+            >
+              Learn more
+            </Link>
           </div>
 
           {photos.length > 0 && (

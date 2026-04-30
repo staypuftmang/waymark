@@ -11,34 +11,42 @@ export const metadata: Metadata = {
 
 const FAQS = [
   {
+    id: "photo-count",
     q: "How many photos should I upload?",
     a: "Best with 5–20 photos. Soft cap is 20, hard cap is 30. Journals with more than 20 photos may be slower to generate.",
   },
   {
+    id: "trip-story",
     q: "What is the trip story field for?",
     a: "It gives the AI context about your trip. You can write it yourself or use ✦ Describe my trip to auto-generate it from your photos.",
   },
   {
+    id: "edit-ai-text",
     q: "Can I edit the AI-generated text?",
     a: "Yes — click any text in Edit mode to change it. You can also rewrite individual sections or all text at once.",
   },
   {
+    id: "writing-style",
     q: "How do I change the writing style?",
     a: "Select a Voice option before generating. Each voice (Poetic, Minimal, Narrative, Witty, Raw) changes the tone of the AI writing.",
   },
   {
+    id: "photo-privacy",
     q: "Are my photos private?",
     a: "Photos are analyzed by AI to write about them but are not stored permanently or shared. Only journals you explicitly make public are visible to others.",
   },
   {
+    id: "share-journal",
     q: "How do I share my journal?",
     a: "Save your journal, then click the Share button to generate a public link anyone can view.",
   },
   {
+    id: "download-journal",
     q: "Can I download my journal?",
     a: "Yes — tap the Download button to save a high-res PNG image of your full journal.",
   },
   {
+    id: "save-journal",
     q: "How do I save my journal?",
     a: "Sign up for a free account. Your journal saves to your dashboard so you can come back anytime.",
   },
