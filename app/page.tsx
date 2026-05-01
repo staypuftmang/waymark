@@ -1612,7 +1612,7 @@ export default function Page() {
               Rewrite your journal?
             </div>
             <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              All text will be rewritten using {WS[ws].label} voice and {LE[len].label} length. Your photos and order won&apos;t change.
+              {`All text will be rewritten using ${WS[ws].label} voice and ${LE[len].label} length. Your photos and order won't change.`}
             </p>
             <div className="flex gap-3 justify-center flex-wrap">
               <button onClick={regenConfirm.onKeepCurrent} style={{ ...btnSecondary, fontSize: 13 }}>

@@ -136,13 +136,32 @@ export default function JournalPreview({
         className="sticky top-0 z-[100] flex justify-between items-center"
         style={{ background: vs.fg, color: vs.bg, padding: "10px 20px", fontSize: 11 }}
       >
-        <button
-          onClick={onLogoClick}
-          className="font-title bg-transparent border-none cursor-pointer"
-          style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.7, color: "inherit", padding: 0 }}
-        >
-          Waymark
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onLogoClick}
+            className="font-title bg-transparent border-none cursor-pointer"
+            style={{ fontWeight: 400, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", opacity: 0.7, color: "inherit", padding: 0 }}
+          >
+            Waymark
+          </button>
+          <button
+            data-export-hide="edit"
+            onClick={onEdit}
+            className="hidden md:inline-flex items-center bg-transparent border-none cursor-pointer font-body"
+            style={{
+              color: "inherit",
+              fontSize: 11,
+              fontWeight: 600,
+              padding: "4px 10px",
+              background: `${vs.bg}20`,
+              borderRadius: 3,
+              gap: 4,
+            }}
+          >
+            <span aria-hidden>{"←"}</span>
+            <span>Edit</span>
+          </button>
+        </div>
 
         <div className="flex items-center gap-3">
           {/* Download dropdown */}
