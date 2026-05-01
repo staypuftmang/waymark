@@ -2013,7 +2013,7 @@ export default function Page() {
                     }}
                   >
                     <span style={{ flex: 1 }}>
-                      {`${photoCount} photos — you've got a story to tell. Heads up: this many will take a bit longer to generate.`}
+                      {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
                     </span>
                     <button
                       onClick={() => setSoftCapDismissed(true)}
@@ -2386,7 +2386,7 @@ export default function Page() {
               }}
             >
               <span style={{ flex: 1 }}>
-                {`${photoCount} photos — you've got a story to tell. Heads up: this many will take a bit longer to generate.`}
+                {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
               </span>
               <button
                 onClick={() => setSoftCapDismissed(true)}
