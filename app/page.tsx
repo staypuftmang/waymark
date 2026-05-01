@@ -1609,12 +1609,10 @@ export default function Page() {
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
           <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
             <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Regenerate journal with new settings?
+              Rewrite your journal?
             </div>
             <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              This will rewrite all AI content using the current Voice
-              {genWs && ws !== genWs ? ` (${WS[ws].label})` : ""} and Length
-              {genLen && len !== genLen ? ` (${LE[len].label})` : ""}.
+              All text will be rewritten using {WS[ws].label} voice and {LE[len].label} length. Your photos and order won&apos;t change.
             </p>
             <div className="flex gap-3 justify-center flex-wrap">
               <button onClick={regenConfirm.onKeepCurrent} style={{ ...btnSecondary, fontSize: 13 }}>
