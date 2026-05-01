@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
-import { exportPDF, exportImage } from "@/app/lib/export";
 import { LayoutMap } from "./layouts";
-import RefinePanel from "./RefinePanel";
-import Lightbox from "./Lightbox";
 import HeaderAuthControls from "./HeaderAuthControls";
 import SharePanel from "./SharePanel";
 import { useAuth } from "@/app/lib/AuthContext";
+
+// Heavy modules — only loaded on user interaction.
+// RefinePanel is a sizeable editor sidebar; Lightbox is only mounted when a
+// photo is clicked. Both ship in their own chunks now instead of riding the
+// initial /j/[slug] payload.
+const RefinePanel = dynamic(() => import("./RefinePanel"), { ssr: false, loading: () => null });
+const Lightbox = dynamic(() => import("./Lightbox"), { ssr: false, loading: () => null });
 
 interface JournalPreviewProps {
   tripTitle: string;
@@ -102,23 +107,15 @@ export default function JournalPreview({
     return () => document.removeEventListener("mousedown", handler);
   }, [downloadOpen]);
 
-  const handleExportPDF = async () => {
-    setExporting("pdf");
-    setDownloadOpen(false);
-    track("download", { type: "pdf", visualStyle: vk, layout: lo, photoCount: photos.length });
-    try {
-      await exportPDF("journal-root", tripTitle, vs.bg, vs.fontCaption);
-    } catch (e) {
-      console.error("PDF export failed:", e);
-    }
-    setExporting(null);
-  };
-
   const handleExportImage = async () => {
     setExporting("image");
     setDownloadOpen(false);
     track("download", { type: "image", visualStyle: vk, layout: lo, photoCount: photos.length });
     try {
+      // Lazy-load the export module (and its html2canvas dependency) on click.
+      // Keeps ~600 KB of canvas rendering code out of the initial bundle for
+      // every visitor who never hits Download.
+      const { exportImage } = await import("@/app/lib/export");
       await exportImage("journal-root", tripTitle, vs.bg);
     } catch (e) {
       console.error("Image export failed:", e);
@@ -181,7 +178,7 @@ export default function JournalPreview({
               }}
             >
               {exporting
-                ? exporting === "pdf" ? "Generating PDF\u2026" : "Generating image\u2026"
+                ? "Generating image\u2026"
                 : "\u2193 Download \u25BE"
               }
             </button>
@@ -199,21 +196,6 @@ export default function JournalPreview({
                   overflow: "hidden",
                 }}
               >
-                <button
-                  onClick={handleExportPDF}
-                  className="w-full text-left bg-transparent border-none cursor-pointer"
-                  style={{
-                    padding: "10px 14px",
-                    fontSize: 12,
-                    color: vs.fg,
-                    fontFamily: "var(--font-body)",
-                    borderBottom: `1px solid ${vs.fg}11`,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = `${vs.fg}08`; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                >
-                  Save as PDF
-                </button>
                 <button
                   onClick={handleExportImage}
                   className="w-full text-left bg-transparent border-none cursor-pointer"

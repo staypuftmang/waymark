@@ -1,6 +1,6 @@
 "use client";
 
-import { openFeedback } from "./FeedbackWidget";
+import { openFeedback } from "./feedbackBus";
 
 /**
  * Inline trigger button that opens the global FeedbackWidget. Used on the

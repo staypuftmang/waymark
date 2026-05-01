@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
@@ -21,9 +22,18 @@ import RewriteAll from "@/app/components/RewriteAll";
 import JournalPreview from "@/app/components/JournalPreview";
 import HelperText from "@/app/components/HelperText";
 import CoverEditor from "@/app/components/CoverEditor";
-import SortablePhotoList from "@/app/components/SortablePhotoList";
+// SortablePhotoList pulls in the three @dnd-kit packages — only loaded once
+// the editor needs them.
+const SortablePhotoList = dynamic(() => import("@/app/components/SortablePhotoList"), {
+  ssr: false,
+  loading: () => null,
+});
 import SiteFooter from "@/app/components/SiteFooter";
-import AuthModal from "@/app/components/AuthModal";
+// AuthModal is only mounted when the user clicks Sign in / Start free.
+const AuthModal = dynamic(() => import("@/app/components/AuthModal"), {
+  ssr: false,
+  loading: () => null,
+});
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
 import AiButton from "@/app/components/AiButton";

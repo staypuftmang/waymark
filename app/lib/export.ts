@@ -1,5 +1,4 @@
 import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 
 /**
  * Width we lay the journal out at while capturing, regardless of viewport.
@@ -35,9 +34,9 @@ function captureScale(): number {
  * window.open lose the user-gesture context and Safari silently blocks
  * them, so the previous "Web Share API + data-URL fallback" path failed
  * with no visible feedback. Instead, navigate the current tab to the blob
- * URL — Safari renders PDFs and PNGs inline, where the user can use the
- * native share sheet (square + arrow) to save to Photos / Files / etc.
- * The journal is one back-tap away.
+ * URL — Safari renders PNGs inline, where the user can use the native
+ * share sheet (square + arrow) to save to Photos / Files / etc. The
+ * journal is one back-tap away.
  *
  * Desktop: classic blob-URL + anchor-click download for the in-place feel.
  */
@@ -82,16 +81,8 @@ function prepareCloneForCapture(clone: HTMLElement): void {
     cover.style.maxWidth = "960px";
     cover.style.margin = "0 auto";
 
-    // Photo cover: do NOT impose a fixed aspect ratio at capture time. The
-    // cover image now uses its natural aspect (capped to maxHeight: min(60vh,
-    // 600px) on the live element). The capture clone inherits that style;
-    // because windowHeight is set to scrollHeight, 60vh would resolve to a
-    // huge value, but the 600px cap kicks in first — so capture matches the
-    // live render and we don't crop the photo.
     const heroImg = cover.querySelector("img") as HTMLImageElement | null;
     if (heroImg) {
-      // Belt-and-braces: ensure the img doesn't go past the 600px ceiling
-      // even if the source style is somehow stripped (older Safari etc.).
       heroImg.style.maxHeight = "600px";
       heroImg.style.height = "auto";
       heroImg.style.objectFit = "contain";
@@ -123,8 +114,6 @@ async function withOffscreenClone<T>(
   fn: (clone: HTMLElement) => Promise<T>,
 ): Promise<T> {
   const clone = source.cloneNode(true) as HTMLElement;
-  // Carry over computed background so the clone matches the source visually
-  // even before html2canvas reads it.
   const sourceBg = getComputedStyle(source).backgroundColor;
   clone.style.background = sourceBg;
   clone.style.position = "fixed";
@@ -135,13 +124,11 @@ async function withOffscreenClone<T>(
   clone.style.maxWidth = `${CAPTURE_WIDTH}px`;
   clone.style.overflow = "hidden";
   clone.style.pointerEvents = "none";
-  // Preserve sticky/relative children — they should resolve against the clone.
   clone.style.contain = "layout";
 
   document.body.appendChild(clone);
   prepareCloneForCapture(clone);
 
-  // Allow layout/paint to settle before html2canvas reads sizes.
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
   try {
@@ -149,173 +136,6 @@ async function withOffscreenClone<T>(
   } finally {
     clone.remove();
   }
-}
-
-/**
- * Walk from each <img> up to its "entry wrapper": the ancestor that represents
- * one logical journal unit (photo + caption + notes + paragraph). Stops at the
- * first ancestor that has siblings — those siblings are the neighboring entries.
- * Magazine pairs are collapsed to their group wrapper so both columns render
- * together as a single unit.
- */
-function findEntryElements(root: HTMLElement): HTMLElement[] {
-  const entries: HTMLElement[] = [];
-  const seen = new Set<HTMLElement>();
-
-  root.querySelectorAll("img").forEach((img) => {
-    if (img.closest("[data-export-cover]")) return;
-
-    let entry: HTMLElement | null = img.parentElement;
-    while (entry && entry !== root) {
-      const parent = entry.parentElement;
-      if (!parent || parent === root) break;
-
-      if (parent.classList.contains("wm-magazine-pair")) {
-        entry = parent.parentElement;
-        continue;
-      }
-
-      if (parent.children.length > 1) break;
-      entry = parent;
-    }
-
-    if (entry && entry !== root && !seen.has(entry)) {
-      seen.add(entry);
-      entries.push(entry);
-    }
-  });
-
-  return entries.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-}
-
-async function captureUnit(
-  el: HTMLElement,
-  bgColor: string,
-  contentWidth: number,
-): Promise<{ dataUrl: string; width: number; height: number }> {
-  const canvas = await html2canvas(el, {
-    scale: captureScale(),
-    useCORS: true,
-    backgroundColor: bgColor,
-    logging: false,
-    windowWidth: CAPTURE_WIDTH,
-  });
-  const ratio = contentWidth / canvas.width;
-  return {
-    dataUrl: canvas.toDataURL("image/png"),
-    width: contentWidth,
-    height: canvas.height * ratio,
-  };
-}
-
-export async function exportPDF(
-  elementId: string,
-  title: string,
-  bgColor: string,
-  _captionFont: string,
-): Promise<void> {
-  const element = document.getElementById(elementId);
-  if (!element) throw new Error("Element not found");
-
-  await withOffscreenClone(element, async (clone) => {
-    const cover = clone.querySelector("[data-export-cover]") as HTMLElement | null;
-    const footer = clone.querySelector("[data-export-footer]") as HTMLElement | null;
-    const entries = findEntryElements(clone);
-
-    // A4 in points
-    const pdfWidth = 595.28;
-    const pdfHeight = 841.89;
-    const margin = 28;
-    // Hard safety margin at the bottom of every page — nothing may be placed
-    // below this line. Larger than the top/side margin because text baselines
-    // and html2canvas descenders can bleed past the computed bounding box,
-    // and because some PDF viewers (and physical printers) crop a few extra
-    // pts at the page edge.
-    const bottomSafety = 60;
-    const usableBottom = pdfHeight - bottomSafety;
-    const contentWidth = pdfWidth - margin * 2;
-    const contentHeight = usableBottom - margin;
-    const entryGap = 20;
-
-    const pdf = new jsPDF("p", "pt", "a4");
-    let firstPagePrimed = false;
-    let yCursor = margin;
-
-    const fillBg = () => {
-      pdf.setFillColor(bgColor);
-      pdf.rect(0, 0, pdfWidth, pdfHeight, "F");
-    };
-
-    const primeNewPage = () => {
-      if (firstPagePrimed) pdf.addPage();
-      firstPagePrimed = true;
-      fillBg();
-      yCursor = margin;
-    };
-
-    const place = (
-      unit: { dataUrl: string; width: number; height: number },
-      opts: { forceNewPage?: boolean } = {},
-    ) => {
-      let w = unit.width;
-      let h = unit.height;
-      if (h > contentHeight) {
-        const s = contentHeight / h;
-        h = contentHeight;
-        w *= s;
-      }
-
-      const spaceLeft = usableBottom - yCursor;
-      if (opts.forceNewPage || h > spaceLeft) primeNewPage();
-
-      const x = margin + (contentWidth - w) / 2;
-      pdf.addImage(unit.dataUrl, "PNG", x, yCursor, w, h);
-      yCursor += h + entryGap;
-    };
-
-    // Cover (title page): vertically centered on page 1.
-    primeNewPage();
-    if (cover) {
-      const coverUnit = await captureUnit(cover, bgColor, contentWidth);
-      let cw = coverUnit.width;
-      let ch = coverUnit.height;
-      if (ch > contentHeight) {
-        const s = contentHeight / ch;
-        ch = contentHeight;
-        cw *= s;
-      }
-      const cx = margin + (contentWidth - cw) / 2;
-      const cy = margin + (contentHeight - ch) / 2;
-      pdf.addImage(coverUnit.dataUrl, "PNG", cx, cy, cw, ch);
-      yCursor = pdfHeight;
-    }
-
-    for (const entry of entries) {
-      const unit = await captureUnit(entry, bgColor, contentWidth);
-      place(unit);
-    }
-
-    if (footer) {
-      const footerUnit = await captureUnit(footer, bgColor, contentWidth);
-      let fw = footerUnit.width;
-      let fh = footerUnit.height;
-      if (fh > contentHeight) {
-        const s = contentHeight / fh;
-        fh = contentHeight;
-        fw *= s;
-      }
-
-      const fitsOnCurrentPage = yCursor + fh <= usableBottom;
-      if (!fitsOnCurrentPage) primeNewPage();
-
-      const fx = margin + (contentWidth - fw) / 2;
-      const fy = fitsOnCurrentPage ? yCursor : usableBottom - fh;
-      pdf.addImage(footerUnit.dataUrl, "PNG", fx, fy, fw, fh);
-    }
-
-    const blob = pdf.output("blob");
-    await deliverFile(blob, `Waymark - ${sanitizeFilename(title)}.pdf`, "application/pdf");
-  });
 }
 
 export async function exportImage(elementId: string, title: string, bgColor: string): Promise<void> {

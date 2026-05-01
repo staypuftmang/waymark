@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
 import { useAuth } from "@/app/lib/AuthContext";
 import { supabase } from "@/app/lib/supabase";
+import { FEEDBACK_OPEN_EVENT } from "./feedbackBus";
+
+// Re-export so any older callers that did `import { openFeedback } from
+// "./FeedbackWidget"` keep working without dragging the heavy widget into
+// their bundle (the re-export is statically resolved by the bundler).
+export { openFeedback } from "./feedbackBus";
 
 type Category = "bug" | "feature_request" | "question" | "other";
 
@@ -14,7 +20,6 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const OPEN_EVENT = "wm:open-feedback";
 const ATTACHMENTS_BUCKET = "Feedback-Attachments";
 const MAX_ATTACHMENTS = 2;
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -23,15 +28,6 @@ interface PendingAttachment {
   id: string;
   file: File;
   previewUrl: string;
-}
-
-/**
- * Programmatic trigger — fired from the FAQ "Send us a message" link or
- * any other in-app spot. The widget listens for this and opens itself.
- */
-export function openFeedback() {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(OPEN_EVENT));
 }
 
 function isMobileBrowser(): boolean {
@@ -72,8 +68,8 @@ export default function FeedbackWidget() {
       setStatus("idle");
       track("feedback_widget_opened", { trigger: "external" });
     };
-    window.addEventListener(OPEN_EVENT, handler);
-    return () => window.removeEventListener(OPEN_EVENT, handler);
+    window.addEventListener(FEEDBACK_OPEN_EVENT, handler);
+    return () => window.removeEventListener(FEEDBACK_OPEN_EVENT, handler);
   }, []);
 
   // Close on Escape.
