@@ -309,6 +309,7 @@ export default function JournalPreview({
               margin: "0 auto",
               borderRadius: vs.bg === "#0F0F0F" || vk === "brutalist" ? 0 : 5,
               overflow: "hidden",
+              background: "var(--color-ink)",
             }}
           >
             <img
