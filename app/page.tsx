@@ -1212,6 +1212,17 @@ export default function Page() {
     if (photoCount <= 20) setSoftCapDismissed(false);
   }, [photoCount]);
   const showSoftCapBanner = overSoftCap && !softCapDismissed;
+
+  // Smart nudge: short brief + lots of photos. The AI handles most of the
+  // narrative on its own in this case; we surface a tip so the user knows
+  // they can either add detail or trigger ✦ Describe my trip.
+  const briefWordCount = tripBrief.trim() ? tripBrief.trim().split(/\s+/).length : 0;
+  const briefNudgeApplies = briefWordCount < 20 && photoCount > 10;
+  const [briefNudgeDismissed, setBriefNudgeDismissed] = useState(false);
+  useEffect(() => {
+    if (!briefNudgeApplies) setBriefNudgeDismissed(false);
+  }, [briefNudgeApplies]);
+  const showBriefNudge = briefNudgeApplies && !briefNudgeDismissed;
   const dropStyleEffective: React.CSSProperties = atHardCap
     ? { ...dropStyle, opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }
     : dropStyle;
@@ -1847,7 +1858,41 @@ export default function Page() {
                 onChange={(e) => setTripBrief(e.target.value)}
                 onFocus={saveToHistory}
               />
-              <HelperText>The AI uses this as inspiration to write unique content for each photo. This text also appears as the opening paragraph of your journal.</HelperText>
+              <HelperText>The more you write here, the more personal your journal will be. Write less and the AI fills in the gaps from what it sees in your photos. This also appears as the opening paragraph.</HelperText>
+              {showBriefNudge && (
+                <div
+                  role="status"
+                  className="font-body text-stone flex items-start"
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    gap: 8,
+                    opacity: 0.85,
+                  }}
+                >
+                  <span style={{ flex: 1 }}>
+                    {`Tip: With ${photoCount} photos and a short brief, the AI will create more of the story on its own. Add more detail for a more personal result, or use ✦ Describe my trip to auto-generate.`}
+                  </span>
+                  <button
+                    onClick={() => setBriefNudgeDismissed(true)}
+                    aria-label="Dismiss tip"
+                    className="cursor-pointer"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "inherit",
+                      padding: 2,
+                      fontSize: 12,
+                      lineHeight: 1,
+                      opacity: 0.6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
 
             <div
