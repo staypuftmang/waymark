@@ -88,13 +88,6 @@ function formatResetIn(seconds: number): string {
 }
 
 /* ── Header ── */
-interface HistoryControls {
-  undo: () => void;
-  redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-}
-
 type SaveStatus = "idle" | "saving" | "saved" | "offline";
 
 function SaveIndicator({ status }: { status: SaveStatus }) {
@@ -120,9 +113,9 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
 
 function Header({
   children,
+  back,
   right,
   onLogoClick,
-  history,
   saveStatus,
   onSignInClick,
   onSignUpClick,
@@ -130,9 +123,12 @@ function Header({
   rateRemainingToday,
 }: {
   children?: React.ReactNode;
+  /** Slot rendered immediately after the WAYMARK logo. Used for back / home /
+   * edit links so navigation is always on the left, mirroring the journal
+   * preview header. */
+  back?: React.ReactNode;
   right?: React.ReactNode;
   onLogoClick?: () => void;
-  history?: HistoryControls;
   saveStatus?: SaveStatus;
   onSignInClick?: () => void;
   onSignUpClick?: () => void;
@@ -160,6 +156,7 @@ function Header({
         >
           Waymark
         </button>
+        {back || null}
         {saveStatus && <SaveIndicator status={saveStatus} />}
         {typeof rateRemainingToday === "number" && rateRemainingToday < 10 && (
           <span
@@ -190,7 +187,6 @@ function Header({
         </div>
       )}
       <div className="flex items-center" style={{ gap: 8 }}>
-        {history && <UndoRedoButtons {...history} />}
         {right || null}
         {(onSignInClick || onSignUpClick) && (
           <HeaderAuthControls
@@ -201,46 +197,6 @@ function Header({
         )}
       </div>
     </div>
-  );
-}
-
-function UndoRedoButtons({ undo, redo, canUndo, canRedo }: HistoryControls) {
-  const btnStyle = (enabled: boolean): React.CSSProperties => ({
-    width: 44,
-    height: 44,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "transparent",
-    border: "none",
-    cursor: enabled ? "pointer" : "not-allowed",
-    color: "var(--color-paper)",
-    opacity: enabled ? 0.7 : 0.3,
-    fontSize: 20,
-    fontFamily: "var(--font-body)",
-    padding: 0,
-  });
-  return (
-    <>
-      <button
-        onClick={undo}
-        disabled={!canUndo}
-        aria-label="Undo"
-        title="Undo (Ctrl+Z)"
-        style={btnStyle(canUndo)}
-      >
-        &#x21B6;
-      </button>
-      <button
-        onClick={redo}
-        disabled={!canRedo}
-        aria-label="Redo"
-        title="Redo (Ctrl+Shift+Z)"
-        style={btnStyle(canRedo)}
-      >
-        &#x21B7;
-      </button>
-    </>
   );
 }
 
@@ -403,14 +359,15 @@ export default function Page() {
     setCoverPhotoId(s.coverPhotoId);
   }, []);
 
-  const { saveToHistory, undo, redo, clearHistory, canUndo, canRedo } = useHistory(
+  const { saveToHistory, undo, redo, clearHistory } = useHistory(
     getContentSnapshot,
     applyContentSnapshot,
     quickGenerating,
   );
 
-  // Only show undo/redo on builder pages: Quick Create setup (0) / review (10)
-  // or Full Builder steps 0–2. Landing (mode null) and preview (99) hide it.
+  // Undo/redo is keyboard-only (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y).
+  // The header buttons were removed to avoid showing controls that look
+  // editable but skip many actions (style picks, photo reorder, dates, etc).
   const isBuilderPage =
     (mode === "quick" && (step === 0 || step === 10)) ||
     (mode === "full" && step >= 0 && step <= 2);
@@ -1843,7 +1800,7 @@ export default function Page() {
       {/* ═══════════════ QUICK CREATE ═══════════════ */}
       {mode === "quick" && step === 0 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
+          <Header onLogoClick={reset} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} back={<HeaderBtn onClick={reset}>&#x2190; Home</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Quick Create</h2>
             <p style={subStyle}>Drop photos, tell your story, pick a style. AI writes the journal.</p>
@@ -2119,7 +2076,7 @@ export default function Page() {
       {/* ═══════════════ QUICK REVIEW ═══════════════ */}
       {mode === "quick" && step === 10 && (
         <div>
-          <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} right={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
+          <Header onLogoClick={reset} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset} back={<HeaderBtn onClick={() => setStep(0)}>&#x2190; Back</HeaderBtn>} />
           <div style={contentStyle}>
             <h2 style={h2Style}>Review & Refine</h2>
             <p style={subStyle}>AI has written your journal. Review, edit, or regenerate below.</p>
@@ -2202,7 +2159,7 @@ export default function Page() {
 
       {/* ═══════════════ FULL BUILDER — STEP INDICATOR ═══════════════ */}
       {mode === "full" && step < 3 && (
-        <Header onLogoClick={reset} history={{ undo, redo, canUndo, canRedo }} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
+        <Header onLogoClick={reset} saveStatus={saveStatus} onSignInClick={openSignIn} onSignUpClick={openSignUp} onYourJournals={reset}>
           <div className="wm-fb-tabs flex items-center">
             {[
               { step: 0, label: "Your Trip", short: "Trip" },
