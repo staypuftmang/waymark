@@ -6,6 +6,7 @@ import { Photo, WordStyleKey, VisualStyleKey, LengthKey } from "@/app/lib/types"
 import { cleanJson, LE } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
 import { batchRewritePrompt } from "@/app/lib/prompts";
+import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
 
 interface RewriteAllProps {
   photos: Photo[];
@@ -42,6 +43,7 @@ export default function RewriteAll({
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
   const cancelRef = useRef(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  useUnloadGuard(loading);
   const [lengthMenuOpen, setLengthMenuOpen] = useState(false);
   const lengthWrapRef = useRef<HTMLDivElement>(null);
 

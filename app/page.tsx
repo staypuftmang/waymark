@@ -10,6 +10,7 @@ import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListene
 import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
+import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
 import { useHistory, ContentSnapshot } from "@/app/lib/history";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
@@ -270,6 +271,7 @@ export default function Page() {
   const [lo, setLo] = useState<LayoutKey>("classic");
   const [quickGenerating, setQuickGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
+  useUnloadGuard(quickGenerating);
   const [savedJournal, setSavedJournal] = useState<SavedState | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
@@ -1439,6 +1441,12 @@ export default function Page() {
             </div>
             <div className="text-warm" style={{ fontSize: 11, marginTop: 12 }}>
               This may take a moment per photo
+            </div>
+            <div
+              className="font-body text-stone"
+              style={{ fontSize: 13, lineHeight: 1.5, marginTop: 14 }}
+            >
+              Please keep this tab open while your journal is being created.
             </div>
             <button
               onClick={cancelGeneration}
