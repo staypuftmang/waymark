@@ -1,6 +1,6 @@
 "use client";
 
-import { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
+import { Photo, VisualStyle, VisualStyleKey, LengthKey } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
 
@@ -8,10 +8,11 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  len?: LengthKey;
   onPhotoClick?: (photoId: number) => void;
 }
 
-export default function Filmstrip({ photos, vs, vk, onPhotoClick }: LayoutProps) {
+export default function Filmstrip({ photos, vs, vk, len, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
   return (
     <div data-layout="filmstrip" style={{ overflowX: "auto", display: "flex", gap: 14, paddingBottom: 16 }}>
@@ -30,7 +31,7 @@ export default function Filmstrip({ photos, vs, vk, onPhotoClick }: LayoutProps)
             }}
             alt=""
           />
-          <PhotoCaption photo={p} vs={vs} vk={vk} />
+          <PhotoCaption photo={p} vs={vs} vk={vk} len={len} />
         </div>
       ))}
     </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Photo, WordStyleKey, VisualStyleKey } from "@/app/lib/types";
-import { cleanJson } from "@/app/lib/constants";
+import { Photo, WordStyleKey, VisualStyleKey, LengthKey } from "@/app/lib/types";
+import { cleanJson, LE } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
 import { batchRewritePrompt } from "@/app/lib/prompts";
 
@@ -15,6 +15,8 @@ interface RewriteAllProps {
   wordStyle: WordStyleKey;
   visualStyle: VisualStyleKey;
   dateDisplay: string;
+  length: LengthKey;
+  onLengthChange: (l: LengthKey) => void;
   onSaveHistory?: () => void;
   journalId?: string | null;
   /** Per-journal rewrite counter (used / 30). When >= 30 the parent
@@ -32,6 +34,7 @@ interface StagedResult {
 
 export default function RewriteAll({
   photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd,
+  length: len, onLengthChange,
   onSaveHistory, journalId, rewritesUsed, rewritesRemaining,
 }: RewriteAllProps) {
   const save = () => onSaveHistory?.();
@@ -39,6 +42,24 @@ export default function RewriteAll({
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
   const cancelRef = useRef(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [lengthMenuOpen, setLengthMenuOpen] = useState(false);
+  const lengthWrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!lengthMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (lengthWrapRef.current && !lengthWrapRef.current.contains(e.target as Node)) {
+        setLengthMenuOpen(false);
+      }
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setLengthMenuOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [lengthMenuOpen]);
 
   const cancel = () => {
     if (cancelBusy) return;
@@ -61,7 +82,7 @@ export default function RewriteAll({
       const notesText = p.aiNotes || p.notes;
       if (!capText && !notesText) continue;
 
-      const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs);
+      const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs, len);
 
       const raw = await aiCall(prompt, p.src, { actionType: "rewrite_batch_photo", journalId });
       if (cancelRef.current) break;
@@ -152,19 +173,77 @@ export default function RewriteAll({
   return (
     <>
       <div className="inline-flex items-center" style={{ gap: 8, flexWrap: "wrap" }}>
-        <button
-          onClick={run}
-          disabled={loading || !has || !!staged}
-          style={{
-            ...btnAccent,
-            fontSize: 12,
-            padding: "7px 14px",
-            opacity: loading || !!staged ? 0.5 : 1,
-            cursor: loading || !has || !!staged ? "not-allowed" : "pointer",
-          }}
-        >
-          {loading ? "\u2026 Generating" : "\u2726 Rewrite All"}
-        </button>
+        <div ref={lengthWrapRef} style={{ position: "relative", display: "inline-flex" }}>
+          <button
+            onClick={() => { if (!loading && !staged) setLengthMenuOpen((v) => !v); }}
+            disabled={loading || !has || !!staged}
+            aria-haspopup="menu"
+            aria-expanded={lengthMenuOpen}
+            style={{
+              ...btnAccent,
+              fontSize: 12,
+              padding: "7px 14px",
+              opacity: loading || !!staged ? 0.5 : 1,
+              cursor: loading || !has || !!staged ? "not-allowed" : "pointer",
+            }}
+          >
+            {loading ? "\u2026 Generating" : `\u2726 Rewrite All \u2022 ${LE[len].label}`}
+          </button>
+
+          {lengthMenuOpen && (
+            <div
+              role="menu"
+              className="bg-card border border-border"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                zIndex: 60,
+                borderRadius: 5,
+                padding: 12,
+                minWidth: 220,
+                boxShadow: "0 8px 30px rgba(0,0,0,.12)",
+              }}
+            >
+              <div className="text-stone uppercase" style={{ fontSize: 10, letterSpacing: 1.5, fontWeight: 700, marginBottom: 8 }}>
+                Length
+              </div>
+              <div className="flex gap-1 flex-wrap" style={{ marginBottom: 10 }}>
+                {(["brief", "standard", "detailed"] as const).map((k) => {
+                  const active = len === k;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => {
+                        onLengthChange(k);
+                        track("length_selected", { value: k });
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 999,
+                        border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
+                        background: active ? "var(--color-accent)" : "transparent",
+                        color: active ? "#fff" : "var(--color-ink)",
+                        fontFamily: "var(--font-body)",
+                        fontSize: 12,
+                        fontWeight: active ? 600 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {LE[k].label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => { setLengthMenuOpen(false); run(); }}
+                style={{ ...btnAccent, fontSize: 12, padding: "7px 14px", width: "100%", justifyContent: "center" }}
+              >
+                Rewrite at {LE[len].label}
+              </button>
+            </div>
+          )}
+        </div>
         {showRewriteCounter && (
           <span style={{ fontSize: 12, color: counterColor, fontFamily: "var(--font-body)" }}>
             {rewritesUsed} of 30 rewrites used

@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey } from "./types";
+import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey } from "./types";
 
 export type JournalMode = "quick" | "full";
 
@@ -12,6 +12,7 @@ export interface JournalData {
   endDate: string | null;
   visualStyle: VisualStyleKey;
   wordStyle: WordStyleKey;
+  length: LengthKey;
   layout: LayoutKey;
   coverPhotoId: number | string | null;
   coverTitle: string;
@@ -58,6 +59,7 @@ interface JournalRow {
   end_date: string | null;
   visual_style: string;
   word_style: string;
+  length: string;
   layout: string;
   cover_photo_id: string | null;
   cover_title: string | null;
@@ -90,6 +92,7 @@ function journalToFields(d: JournalData) {
     end_date: d.endDate,
     visual_style: d.visualStyle,
     word_style: d.wordStyle,
+    length: d.length,
     layout: d.layout,
     // cover_photo_id is a UUID column, but client-side photo ids are numeric.
     // is_cover on each journal_photos row is the source of truth instead.
@@ -243,6 +246,7 @@ export async function loadJournal(journalId: string): Promise<LoadedJournal> {
       endDate: journal.end_date,
       visualStyle: (journal.visual_style || "editorial") as VisualStyleKey,
       wordStyle: (journal.word_style || "poetic") as WordStyleKey,
+      length: (journal.length || "standard") as LengthKey,
       layout: (journal.layout || "classic") as LayoutKey,
       coverPhotoId,
       coverTitle: journal.cover_title ?? "",

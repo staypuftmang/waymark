@@ -1,4 +1,4 @@
-import { VisualStyle, WordStyle, LayoutOption, VisualStyleKey, WordStyleKey, LayoutKey } from "./types";
+import { VisualStyle, WordStyle, LayoutOption, LengthOption, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey } from "./types";
 
 export const VS: Record<VisualStyleKey, VisualStyle> = {
   editorial: {
@@ -111,6 +111,24 @@ export const LO: Record<LayoutKey, LayoutOption> = {
   stacked: {
     label: "Stacked",
     icon: '<svg viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="10" y="3" width="24" height="16" rx="1" transform="rotate(3 22 11)"/><rect x="8" y="15" width="24" height="16" rx="1" transform="rotate(-2 20 23)"/></svg>',
+  },
+};
+
+export const LE: Record<LengthKey, LengthOption> = {
+  brief: {
+    label: "Brief",
+    sys: "Write a short caption (1 sentence, under 15 words) and 1-2 sentences of body text. No pull quote. Keep it minimal.",
+    showsPullQuote: false,
+  },
+  standard: {
+    label: "Standard",
+    sys: "Write an uppercase caption (under 15 words), an italic pull quote (1-2 sentences), and one paragraph of body text (80-120 words).",
+    showsPullQuote: true,
+  },
+  detailed: {
+    label: "Detailed",
+    sys: "Write an uppercase caption (under 15 words), an italic pull quote (1-2 sentences), and 2-3 paragraphs of body text (200-300 words). Be richly descriptive.",
+    showsPullQuote: true,
   },
 };
 

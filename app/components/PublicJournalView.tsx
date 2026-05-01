@@ -1,4 +1,4 @@
-import { Photo, VisualStyleKey, LayoutKey } from "@/app/lib/types";
+import { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { LayoutMap } from "./layouts";
 
@@ -9,6 +9,7 @@ interface PublicJournalViewProps {
   photos: Photo[];
   visualStyleKey: VisualStyleKey;
   layoutKey: LayoutKey;
+  length?: LengthKey;
   coverPhotoId: number | null;
   coverTitle: string;
   coverSubtitle: string;
@@ -21,6 +22,7 @@ export default function PublicJournalView({
   photos,
   visualStyleKey: vk,
   layoutKey: lo,
+  length: len = "standard",
   coverPhotoId,
   coverTitle,
   coverSubtitle,
@@ -221,7 +223,7 @@ export default function PublicJournalView({
           padding: "36px 24px 40px",
         }}
       >
-        <LayoutComponent photos={photos} vs={vs} vk={vk} />
+        <LayoutComponent photos={photos} vs={vs} vk={vk} len={len} />
 
         <div
           style={{

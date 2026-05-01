@@ -4,13 +4,14 @@ import Magazine from "./Magazine";
 import Grid from "./Grid";
 import Filmstrip from "./Filmstrip";
 import Stacked from "./Stacked";
-import type { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
+import type { Photo, VisualStyle, VisualStyleKey, LengthKey } from "@/app/lib/types";
 import type { ComponentType } from "react";
 
 export interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  len?: LengthKey;
   onPhotoClick?: (photoId: number) => void;
 }
 

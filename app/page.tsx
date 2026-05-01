@@ -3,8 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { track } from "@vercel/analytics";
-import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, Mode } from "@/app/lib/types";
-import { VS, WS, LO, formatDate, cleanJson } from "@/app/lib/constants";
+import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
+import { VS, WS, LO, LE, formatDate, cleanJson } from "@/app/lib/constants";
 import { quickCreatePrompt, tripBriefFromPhotosPrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
 import { makeThumbnail } from "@/app/lib/compress";
@@ -266,6 +266,7 @@ export default function Page() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [vk, setVk] = useState<VisualStyleKey>("editorial");
   const [ws, setWs] = useState<WordStyleKey>("poetic");
+  const [len, setLen] = useState<LengthKey>("standard");
   const [lo, setLo] = useState<LayoutKey>("classic");
   const [quickGenerating, setQuickGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
@@ -469,6 +470,7 @@ export default function Page() {
       endDate: endDate ? endDate.toISOString().slice(0, 10) : null,
       visualStyle: vk,
       wordStyle: ws,
+      length: len,
       layout: lo,
       coverPhotoId,
       coverTitle,
@@ -565,7 +567,7 @@ export default function Page() {
     user,
     tripTitle, tripBrief,
     startDate, endDate,
-    vk, ws, lo,
+    vk, ws, len, lo,
     coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited,
     photos,
     currentJournalId,
@@ -676,6 +678,7 @@ export default function Page() {
         endDate: endDate ? endDate.toISOString() : null,
         visualStyleKey: vk,
         wordStyle: ws,
+        length: len,
         layoutKey: lo,
         photos,
         coverPhotoId,
@@ -688,7 +691,7 @@ export default function Page() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
+  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, len, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
 
   const resumeJournal = () => {
     if (!savedJournal) return;
@@ -700,6 +703,7 @@ export default function Page() {
     setEndDate(savedJournal.endDate ? new Date(savedJournal.endDate) : null);
     setVk(savedJournal.visualStyleKey as VisualStyleKey);
     setWs(savedJournal.wordStyle as WordStyleKey);
+    setLen((savedJournal.length as LengthKey) ?? "standard");
     setLo(savedJournal.layoutKey as LayoutKey);
     setPhotos(savedJournal.photos);
     setCoverPhotoId(savedJournal.coverPhotoId ?? null);
@@ -860,6 +864,7 @@ export default function Page() {
       setEndDate(data.endDate ? new Date(data.endDate) : null);
       setVk(data.visualStyle);
       setWs(data.wordStyle);
+      setLen(data.length);
       setLo(data.layout);
       setPhotos(data.photos);
       setCoverPhotoId(typeof data.coverPhotoId === "number" ? data.coverPhotoId : null);
@@ -1037,6 +1042,7 @@ export default function Page() {
         fullIdx >= 0 ? fullIdx : i,
         photos.length,
         previousCaptions,
+        len,
       );
       let opts: Parameters<typeof aiCall>[2];
       if (isFreshJournal) {
@@ -1898,6 +1904,21 @@ export default function Page() {
               </div>
             </div>
 
+            <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Length</label>
+            <HelperText>Controls how much the AI writes per photo.</HelperText>
+            <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
+              {(["brief", "standard", "detailed"] as LengthKey[]).map((k) => (
+                <button
+                  key={k}
+                  className={chipClass}
+                  onClick={() => { setLen(k); track("length_selected", { value: k }); }}
+                  style={chip(len === k)}
+                >
+                  {LE[k].label}
+                </button>
+              ))}
+            </div>
+
             <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Layout</label>
             <HelperText>How your photos are arranged in the journal.</HelperText>
             <div className="wm-layout-picker" style={{ marginTop: 8 }}>
@@ -1970,7 +1991,7 @@ export default function Page() {
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -2353,7 +2374,7 @@ export default function Page() {
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
@@ -2439,6 +2460,7 @@ export default function Page() {
           photos={photos}
           visualStyleKey={vk}
           layoutKey={lo}
+          length={len}
           onEdit={() => setStep(mode === "quick" ? 10 : 2)}
           onLogoClick={reset}
           setVisualStyleKey={setVk}

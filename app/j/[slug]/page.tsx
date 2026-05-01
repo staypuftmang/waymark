@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import PublicJournalView from "@/app/components/PublicJournalView";
 import { formatDate } from "@/app/lib/constants";
-import type { Photo, VisualStyleKey, LayoutKey } from "@/app/lib/types";
+import type { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
 
 export const revalidate = 3600;
 
@@ -14,6 +14,7 @@ interface PublicJournal {
   endDate: string | null;
   visualStyle: VisualStyleKey;
   layout: LayoutKey;
+  length: LengthKey;
   coverTitle: string;
   coverSubtitle: string;
   photos: Photo[];
@@ -29,6 +30,7 @@ interface JournalRow {
   end_date: string | null;
   visual_style: string;
   layout: string;
+  length: string | null;
   cover_title: string | null;
   cover_subtitle: string | null;
   published_at: string | null;
@@ -53,7 +55,7 @@ async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
   const { data: journal, error } = await supabaseAdmin
     .from("journals")
     .select(
-      "id, title, trip_brief, start_date, end_date, visual_style, layout, cover_title, cover_subtitle, published_at"
+      "id, title, trip_brief, start_date, end_date, visual_style, layout, length, cover_title, cover_subtitle, published_at"
     )
     .eq("share_slug", slug)
     .eq("is_public", true)
@@ -89,6 +91,7 @@ async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
     endDate: journal.end_date,
     visualStyle: (journal.visual_style || "editorial") as VisualStyleKey,
     layout: (journal.layout || "classic") as LayoutKey,
+    length: (journal.length || "standard") as LengthKey,
     coverTitle: journal.cover_title ?? "",
     coverSubtitle: journal.cover_subtitle ?? "",
     photos,
@@ -142,6 +145,7 @@ export default async function PublicJournalPage({ params }: PageParams) {
       photos={journal.photos}
       visualStyleKey={journal.visualStyle}
       layoutKey={journal.layout}
+      length={journal.length}
       coverPhotoId={journal.coverPhotoId}
       coverTitle={journal.coverTitle}
       coverSubtitle={journal.coverSubtitle}

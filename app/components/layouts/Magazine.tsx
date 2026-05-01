@@ -1,6 +1,6 @@
 "use client";
 
-import { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
+import { Photo, VisualStyle, VisualStyleKey, LengthKey } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
 
@@ -8,10 +8,11 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  len?: LengthKey;
   onPhotoClick?: (photoId: number) => void;
 }
 
-export default function Magazine({ photos, vs, vk, onPhotoClick }: LayoutProps) {
+export default function Magazine({ photos, vs, vk, len, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
 
   const groups: Photo[][] = [];
@@ -43,7 +44,7 @@ export default function Magazine({ photos, vs, vk, onPhotoClick }: LayoutProps) 
                 }}
                 alt=""
               />
-              <PhotoCaption photo={gr[0]} vs={vs} vk={vk} />
+              <PhotoCaption photo={gr[0]} vs={vs} vk={vk} len={len} />
             </div>
           ) : (
             <div className="wm-magazine-pair">
@@ -61,7 +62,7 @@ export default function Magazine({ photos, vs, vk, onPhotoClick }: LayoutProps) 
                     }}
                     alt=""
                   />
-                  <PhotoCaption photo={p} vs={vs} vk={vk} />
+                  <PhotoCaption photo={p} vs={vs} vk={vk} len={len} />
                 </div>
               ))}
             </div>

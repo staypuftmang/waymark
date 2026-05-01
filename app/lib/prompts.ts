@@ -1,5 +1,5 @@
-import { WordStyleKey } from "./types";
-import { WS } from "./constants";
+import { WordStyleKey, LengthKey } from "./types";
+import { WS, LE } from "./constants";
 
 const BANNED_PHRASES = [
   "breathtaking views", "breathtaking scenery", "breathtaking",
@@ -9,10 +9,12 @@ const BANNED_PHRASES = [
   "picture-perfect", "steeped in history", "bustling streets",
 ];
 
-function systemPrompt(ws: WordStyleKey): string {
+function systemPrompt(ws: WordStyleKey, len: LengthKey = "standard"): string {
   return `You are writing entries for a personal travel journal.
 
 ${WS[ws].sys}
+
+LENGTH: ${LE[len].sys}
 
 CRITICAL RULES:
 - LOOK AT THE PHOTO FIRST. Your writing must describe what you actually see in the image — the specific subject, colors, light, people, scene, objects. Do not write generic travel prose.
@@ -79,7 +81,8 @@ export function quickCreatePrompt(
   dates: string,
   index: number,
   total: number,
-  previousCaptions: string[]
+  previousCaptions: string[],
+  len: LengthKey = "standard",
 ): string {
   const aspects = [
     "a taste or smell — food, coffee, sea air, pine, dust",
@@ -105,7 +108,16 @@ ${previousCaptions.map((c, i) => `  Photo ${i + 1}: "${c}"`).join("\n")}
 `
     : "";
 
-  return `${systemPrompt(ws)}
+  const notesField = len === "brief"
+    ? `"notes": "" (empty string — Brief length skips the pull quote)`
+    : `"notes": "1-2 sentences — what you see and feel about THIS specific moment, with ${aspect}"`;
+  const paragraphField = len === "brief"
+    ? `"paragraph": "1-2 sentences — what's visible in THIS photo, with ${aspect}. Concrete and minimal."`
+    : len === "detailed"
+      ? `"paragraph": "2-3 paragraphs (200-300 words total) — bring THIS specific photo to life with rich, layered ${aspect} details. Describe what's actually visible. Use paragraph breaks (\\n\\n) between paragraphs. No clichés."`
+      : `"paragraph": "1 paragraph (80-120 words) — bring THIS specific photo to life with concrete ${aspect} details. Describe what's actually visible. No clichés."`;
+
+  return `${systemPrompt(ws, len)}
 
 LOOK AT THE PHOTO ABOVE. Describe what you actually see — the specific subject, scene, objects, people, light, colors, atmosphere.
 
@@ -125,7 +137,7 @@ UNIQUENESS RULES:
 - Each entry should feel like a distinct moment, not a variation of the same scene.
 
 Return ONLY valid JSON:
-{"caption": "1 short sentence — a specific label for what's in THIS photo, starting with a unique word", "notes": "1-2 sentences — what you see and feel about THIS specific moment, with ${aspect}", "paragraph": "3-5 sentences — bring THIS specific photo to life with concrete ${aspect} details. Describe what's actually visible. No clichés."}
+{"caption": "1 short sentence — a specific label for what's in THIS photo, starting with a unique word", ${notesField}, ${paragraphField}}
 
 JSON only, no markdown, no commentary.`;
 }
@@ -218,13 +230,23 @@ export function batchRewritePrompt(
   dates: string,
   caption: string,
   notes: string,
-  previousOutputs: string[]
+  previousOutputs: string[],
+  len: LengthKey = "standard",
 ): string {
   const prevCtx = previousOutputs.length > 0
     ? `\nALREADY WRITTEN (avoid similar themes, phrases, or imagery):\n${previousOutputs.map((o, i) => `Photo ${i + 1}: "${o}"`).join("\n")}\n`
     : "";
 
-  return `${systemPrompt(ws)}
+  const notesField = len === "brief"
+    ? `"notes": "" (empty string — Brief length skips the pull quote)`
+    : `"notes": "1-2 sentences — what you see and feel in this image"`;
+  const paragraphField = len === "brief"
+    ? `"paragraph": "1-2 sentences — what's actually in the photo. Minimal."`
+    : len === "detailed"
+      ? `"paragraph": "2-3 paragraphs (200-300 words total) — richly describe what's in the photo. Use \\n\\n between paragraphs."`
+      : `"paragraph": "1 paragraph (80-120 words) — concrete and vivid, describing what's actually in the photo"`;
+
+  return `${systemPrompt(ws, len)}
 
 LOOK AT THE PHOTO ABOVE. Generate caption, notes, and paragraph for THIS specific photo — describe what you actually see.
 ${prevCtx}
@@ -235,7 +257,7 @@ Existing notes: "${notes}"
 
 Write ORIGINAL content grounded in what's visible in the image. Every sentence must connect to what you see in THIS photo.
 
-Return ONLY valid JSON: {"caption": "1 sentence — specific label for what's in this photo", "notes": "1-2 sentences — what you see and feel in this image", "paragraph": "3-5 sentences — concrete and vivid, describing what's actually in the photo"}
+Return ONLY valid JSON: {"caption": "1 sentence — specific label for what's in this photo", ${notesField}, ${paragraphField}}
 
 JSON only, no markdown.`;
 }

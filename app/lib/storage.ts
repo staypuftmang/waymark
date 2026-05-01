@@ -26,6 +26,8 @@ export interface SavedState {
   endDate: string | null;   // ISO string
   visualStyleKey: string;
   wordStyle: string;
+  /** Optional — older saves predate the LENGTH selector; default to "standard" on load. */
+  length?: string;
   layoutKey: string;
   photos: Array<{
     id: number;

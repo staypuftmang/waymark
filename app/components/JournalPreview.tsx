@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { track } from "@vercel/analytics";
-import { Photo, VisualStyleKey, LayoutKey } from "@/app/lib/types";
+import { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { exportPDF, exportImage } from "@/app/lib/export";
 import { LayoutMap } from "./layouts";
@@ -19,6 +19,7 @@ interface JournalPreviewProps {
   photos: Photo[];
   visualStyleKey: VisualStyleKey;
   layoutKey: LayoutKey;
+  length?: LengthKey;
   onEdit: () => void;
   onLogoClick: () => void;
   setVisualStyleKey: (k: VisualStyleKey) => void;
@@ -44,6 +45,7 @@ export default function JournalPreview({
   photos,
   visualStyleKey: vk,
   layoutKey: lo,
+  length: len = "standard",
   onEdit,
   onLogoClick,
   setVisualStyleKey: setVkProp,
@@ -466,7 +468,7 @@ export default function JournalPreview({
         }}
       >
 
-        <LayoutComponent photos={photos} vs={vs} vk={vk} onPhotoClick={openLightbox} />
+        <LayoutComponent photos={photos} vs={vs} vk={vk} len={len} onPhotoClick={openLightbox} />
 
         <div data-export-footer>
           <div

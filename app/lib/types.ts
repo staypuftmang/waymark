@@ -36,4 +36,13 @@ export interface LayoutOption {
 export type VisualStyleKey = "editorial" | "polaroid" | "darkroom" | "botanical" | "brutalist";
 export type WordStyleKey = "poetic" | "minimal" | "narrative" | "witty" | "raw";
 export type LayoutKey = "classic" | "magazine" | "grid" | "filmstrip" | "stacked";
+export type LengthKey = "brief" | "standard" | "detailed";
 export type Mode = "quick" | "full" | null;
+
+export interface LengthOption {
+  label: string;
+  /** System-prompt fragment that tells the AI how much to write per photo. */
+  sys: string;
+  /** When true, the rendering layer omits the pull quote (notes) section. */
+  showsPullQuote: boolean;
+}

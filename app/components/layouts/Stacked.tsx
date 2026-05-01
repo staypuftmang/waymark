@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Photo, VisualStyle, VisualStyleKey } from "@/app/lib/types";
+import { Photo, VisualStyle, VisualStyleKey, LengthKey } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
 
@@ -9,12 +9,13 @@ interface LayoutProps {
   photos: Photo[];
   vs: VisualStyle;
   vk: VisualStyleKey;
+  len?: LengthKey;
   onPhotoClick?: (photoId: number) => void;
 }
 
 const ROTATIONS = [-2.5, 1.8, -1.2, 2.8, -0.8, 1.5];
 
-export default function Stacked({ photos, vs, vk, onPhotoClick }: LayoutProps) {
+export default function Stacked({ photos, vs, vk, len, onPhotoClick }: LayoutProps) {
   const br = getBorderRadius(vk);
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -51,7 +52,7 @@ export default function Stacked({ photos, vs, vk, onPhotoClick }: LayoutProps) {
               }}
               alt=""
             />
-            <PhotoCaption photo={p} vs={vs} vk={vk} />
+            <PhotoCaption photo={p} vs={vs} vk={vk} len={len} />
           </div>
         );
       })}
