@@ -18,6 +18,10 @@ interface RewriteAllProps {
   dateDisplay: string;
   length: LengthKey;
   onLengthChange: (l: LengthKey) => void;
+  /** Called whenever the user accepts one or more AI rewrites. Lets the
+   * parent snapshot the ws/len that wrote the now-current journal text
+   * so the regenerate-on-settings-change prompt knows what to compare. */
+  onContentRegenerated?: () => void;
   onSaveHistory?: () => void;
   journalId?: string | null;
   /** Per-journal rewrite counter (used / 30). When >= 30 the parent
@@ -35,7 +39,7 @@ interface StagedResult {
 
 export default function RewriteAll({
   photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd,
-  length: len, onLengthChange,
+  length: len, onLengthChange, onContentRegenerated,
   onSaveHistory, journalId, rewritesUsed, rewritesRemaining,
 }: RewriteAllProps) {
   const save = () => onSaveHistory?.();
@@ -112,10 +116,12 @@ export default function RewriteAll({
       const s = staged[p.id];
       if (!s) continue;
       if (s.caption) up(p.id, "aiCaption", s.caption);
-      if (s.notes) up(p.id, "aiNotes", s.notes);
+      // Brief asks for empty notes — clear any prior pull quote.
+      up(p.id, "aiNotes", s.notes ?? "");
       if (s.paragraph) up(p.id, "aiParagraph", s.paragraph);
     }
     setStaged(null);
+    onContentRegenerated?.();
   };
 
   const accept1 = (id: number) => {
@@ -124,7 +130,7 @@ export default function RewriteAll({
     if (!s) return;
     save();
     if (s.caption) up(id, "aiCaption", s.caption);
-    if (s.notes) up(id, "aiNotes", s.notes);
+    up(id, "aiNotes", s.notes ?? "");
     if (s.paragraph) up(id, "aiParagraph", s.paragraph);
     setStaged((v) => {
       if (!v) return null;
@@ -132,6 +138,7 @@ export default function RewriteAll({
       delete n[id];
       return Object.keys(n).length ? n : null;
     });
+    onContentRegenerated?.();
   };
 
   const reject1 = (id: number) => {

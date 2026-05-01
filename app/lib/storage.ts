@@ -28,6 +28,10 @@ export interface SavedState {
   wordStyle: string;
   /** Optional — older saves predate the LENGTH selector; default to "standard" on load. */
   length?: string;
+  /** ws/len snapshotted when AI last wrote content. Optional for back-compat
+   * with saves from before the regenerate-on-settings-change prompt. */
+  generationWordStyle?: string | null;
+  generationLength?: string | null;
   layoutKey: string;
   photos: Array<{
     id: number;

@@ -13,6 +13,11 @@ export interface JournalData {
   visualStyle: VisualStyleKey;
   wordStyle: WordStyleKey;
   length: LengthKey;
+  /** ws/len in effect the last time the AI generated or rewrote content
+   * for this journal. Compared against current ws/len on Update Journal
+   * to decide whether to prompt the user to regenerate. */
+  generationWordStyle: WordStyleKey | null;
+  generationLength: LengthKey | null;
   layout: LayoutKey;
   coverPhotoId: number | string | null;
   coverTitle: string;
@@ -60,6 +65,8 @@ interface JournalRow {
   visual_style: string;
   word_style: string;
   length: string;
+  generation_word_style: string | null;
+  generation_length: string | null;
   layout: string;
   cover_photo_id: string | null;
   cover_title: string | null;
@@ -93,6 +100,8 @@ function journalToFields(d: JournalData) {
     visual_style: d.visualStyle,
     word_style: d.wordStyle,
     length: d.length,
+    generation_word_style: d.generationWordStyle,
+    generation_length: d.generationLength,
     layout: d.layout,
     // cover_photo_id is a UUID column, but client-side photo ids are numeric.
     // is_cover on each journal_photos row is the source of truth instead.
@@ -247,6 +256,8 @@ export async function loadJournal(journalId: string): Promise<LoadedJournal> {
       visualStyle: (journal.visual_style || "editorial") as VisualStyleKey,
       wordStyle: (journal.word_style || "poetic") as WordStyleKey,
       length: (journal.length || "standard") as LengthKey,
+      generationWordStyle: (journal.generation_word_style as WordStyleKey | null) ?? null,
+      generationLength: (journal.generation_length as LengthKey | null) ?? null,
       layout: (journal.layout || "classic") as LayoutKey,
       coverPhotoId,
       coverTitle: journal.cover_title ?? "",

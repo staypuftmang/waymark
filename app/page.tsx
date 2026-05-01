@@ -5,7 +5,7 @@ import Link from "next/link";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, LE, formatDate, cleanJson } from "@/app/lib/constants";
-import { quickCreatePrompt, tripBriefFromPhotosPrompt } from "@/app/lib/prompts";
+import { quickCreatePrompt, tripBriefFromPhotosPrompt, batchRewritePrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
 import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
@@ -269,6 +269,15 @@ export default function Page() {
   const [ws, setWs] = useState<WordStyleKey>("poetic");
   const [len, setLen] = useState<LengthKey>("standard");
   const [lo, setLo] = useState<LayoutKey>("classic");
+  // Snapshot of ws / len from the last successful AI run on this journal.
+  // Drives the regenerate-on-settings-change confirmation. null means "no
+  // AI yet" (fresh journal) — no prompt fires until at least one run lands.
+  const [genWs, setGenWs] = useState<WordStyleKey | null>(null);
+  const [genLen, setGenLen] = useState<LengthKey | null>(null);
+  const [regenConfirm, setRegenConfirm] = useState<{
+    onRegenerate: () => void;
+    onKeepCurrent: () => void;
+  } | null>(null);
   const [quickGenerating, setQuickGenerating] = useState(false);
   const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
   useUnloadGuard(quickGenerating);
@@ -473,6 +482,8 @@ export default function Page() {
       visualStyle: vk,
       wordStyle: ws,
       length: len,
+      generationWordStyle: genWs,
+      generationLength: genLen,
       layout: lo,
       coverPhotoId,
       coverTitle,
@@ -569,7 +580,7 @@ export default function Page() {
     user,
     tripTitle, tripBrief,
     startDate, endDate,
-    vk, ws, len, lo,
+    vk, ws, len, genWs, genLen, lo,
     coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited,
     photos,
     currentJournalId,
@@ -681,6 +692,8 @@ export default function Page() {
         visualStyleKey: vk,
         wordStyle: ws,
         length: len,
+        generationWordStyle: genWs,
+        generationLength: genLen,
         layoutKey: lo,
         photos,
         coverPhotoId,
@@ -693,7 +706,7 @@ export default function Page() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, len, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
+  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, len, genWs, genLen, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
 
   const resumeJournal = () => {
     if (!savedJournal) return;
@@ -706,6 +719,8 @@ export default function Page() {
     setVk(savedJournal.visualStyleKey as VisualStyleKey);
     setWs(savedJournal.wordStyle as WordStyleKey);
     setLen((savedJournal.length as LengthKey) ?? "standard");
+    setGenWs((savedJournal.generationWordStyle as WordStyleKey | null) ?? null);
+    setGenLen((savedJournal.generationLength as LengthKey | null) ?? null);
     setLo(savedJournal.layoutKey as LayoutKey);
     setPhotos(savedJournal.photos);
     setCoverPhotoId(savedJournal.coverPhotoId ?? null);
@@ -848,6 +863,8 @@ export default function Page() {
     setCoverTitle("");
     setCoverSubtitle("");
     setCoverTitleEdited(false);
+    setGenWs(null);
+    setGenLen(null);
     setCurrentJournalId(null);
     lastSavedPhotosRef.current = null;
     lastSavedCoverIdRef.current = null;
@@ -867,6 +884,8 @@ export default function Page() {
       setVk(data.visualStyle);
       setWs(data.wordStyle);
       setLen(data.length);
+      setGenWs(data.generationWordStyle);
+      setGenLen(data.generationLength);
       setLo(data.layout);
       setPhotos(data.photos);
       setCoverPhotoId(typeof data.coverPhotoId === "number" ? data.coverPhotoId : null);
@@ -1077,10 +1096,89 @@ export default function Page() {
     cancelGenerationRef.current = false;
     setQuickGenerating(false);
     setGenProgress(null);
+    if (processed > 0 && !cancelled) {
+      // Snapshot the settings that produced this content so a later Update
+      // Journal can detect a ws/len change and offer to regenerate.
+      setGenWs(ws);
+      setGenLen(len);
+    }
     return { generated: processed, cancelled };
   };
 
+  // Rewrite all photos that already have AI content using the current ws/len.
+  // Used by the regenerate-on-settings-change confirmation. Differs from
+  // generateMissingAi in that it operates on photos with content (using
+  // batchRewritePrompt) rather than blank ones.
+  const regenerateAllAi = async (mode: "quick" | "full") => {
+    const targets = photos.filter((p) => p.aiCaption || p.aiNotes || p.aiParagraph || p.caption || p.notes);
+    if (targets.length === 0) return { generated: 0, cancelled: false };
+
+    cancelGenerationRef.current = false;
+    setQuickGenerating(true);
+    setGenProgress({ current: 0, total: targets.length });
+    track("ai_generated", { mode: `${mode}_regenerate`, photoCount: targets.length, wordStyle: ws, visualStyle: vk });
+
+    const previousOutputs: string[] = [];
+    let processed = 0;
+    for (let i = 0; i < targets.length; i++) {
+      if (cancelGenerationRef.current) break;
+      setGenProgress({ current: i + 1, total: targets.length });
+      const p = targets[i];
+      const capText = p.aiCaption || p.caption;
+      const notesText = p.aiNotes || p.notes;
+      const prompt = batchRewritePrompt(ws, tripTitle, tripBrief, dateDisplay, capText, notesText, previousOutputs, len);
+      const raw = await aiCall(prompt, p.src, { actionType: "rewrite_batch_photo", journalId: currentJournalId });
+      if (cancelGenerationRef.current) break;
+      if (raw) {
+        try {
+          const obj = JSON.parse(cleanJson(raw));
+          if (obj.caption) { updatePhoto(p.id, "aiCaption", obj.caption); previousOutputs.push(obj.caption); }
+          // For Brief, the prompt asks for empty notes — clear any prior pull quote.
+          updatePhoto(p.id, "aiNotes", obj.notes ?? "");
+          if (obj.paragraph) updatePhoto(p.id, "aiParagraph", obj.paragraph);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      processed++;
+    }
+    const cancelled = cancelGenerationRef.current;
+    cancelGenerationRef.current = false;
+    setQuickGenerating(false);
+    setGenProgress(null);
+    if (processed > 0 && !cancelled) {
+      setGenWs(ws);
+      setGenLen(len);
+    }
+    return { generated: processed, cancelled };
+  };
+
+  // True when the journal already has AI content AND the current ws/len
+  // differ from the snapshot taken at last generation. Drives the prompt.
+  const settingsChangedSinceGeneration =
+    hasAnyAi && genWs !== null && genLen !== null && (ws !== genWs || len !== genLen);
+
   const quickGenerate = async () => {
+    if (settingsChangedSinceGeneration) {
+      setRegenConfirm({
+        onRegenerate: async () => {
+          setRegenConfirm(null);
+          await regenerateAllAi("quick");
+          setStep(99);
+        },
+        onKeepCurrent: async () => {
+          setRegenConfirm(null);
+          // User chose not to rewrite existing text — accept the new settings
+          // as the baseline so the prompt doesn't fire again on no-change.
+          setGenWs(ws);
+          setGenLen(len);
+          const result = await generateMissingAi("quick");
+          if (result.cancelled || result.generated === 0) setStep(99);
+          else setStep(10);
+        },
+      });
+      return;
+    }
     const result = await generateMissingAi("quick");
     // Cancelled mid-run, or returning user with prior AI: go to preview.
     // Fresh full run: drop into Quick Review (step 10) for the user to scan.
@@ -1092,6 +1190,23 @@ export default function Page() {
   };
 
   const fullBuilderAdvance = async () => {
+    if (settingsChangedSinceGeneration) {
+      setRegenConfirm({
+        onRegenerate: async () => {
+          setRegenConfirm(null);
+          await regenerateAllAi("full");
+          setStep(99);
+        },
+        onKeepCurrent: async () => {
+          setRegenConfirm(null);
+          setGenWs(ws);
+          setGenLen(len);
+          if (hasAnyAi) await generateMissingAi("full");
+          setStep(99);
+        },
+      });
+      return;
+    }
     // Fresh Full Builder: no AI at all — current behavior, straight to preview.
     // Returning Full Builder with new photos: run AI for the missing ones,
     // then go to preview. All photos already have AI: skip to preview.
@@ -1484,6 +1599,30 @@ export default function Page() {
             <div className="flex gap-3 justify-center">
               <button onClick={startFresh} style={{ ...btnSecondary, fontSize: 13 }}>Start Fresh</button>
               <button onClick={resumeJournal} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Resume</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════ REGENERATE-WITH-NEW-SETTINGS DIALOG ═══════════════ */}
+      {regenConfirm && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
+          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
+            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
+              Regenerate journal with new settings?
+            </div>
+            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              This will rewrite all AI content using the current Voice
+              {genWs && ws !== genWs ? ` (${WS[ws].label})` : ""} and Length
+              {genLen && len !== genLen ? ` (${LE[len].label})` : ""}.
+            </p>
+            <div className="flex gap-3 justify-center flex-wrap">
+              <button onClick={regenConfirm.onKeepCurrent} style={{ ...btnSecondary, fontSize: 13 }}>
+                Keep current text
+              </button>
+              <button onClick={regenConfirm.onRegenerate} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>
+                Regenerate
+              </button>
             </div>
           </div>
         </div>
@@ -1999,7 +2138,7 @@ export default function Page() {
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -2382,7 +2521,7 @@ export default function Page() {
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
