@@ -1200,7 +1200,18 @@ export default function Page() {
 
   const photoCount = photos.length;
   const atHardCap = photoCount >= 30;
+  // Over the 20-photo soft cap. Triggers the dismissible amber banner and
+  // the stone-tinted count line. Hard cap still suppresses the banner —
+  // the dropzone's red message is louder and avoids stacking warnings.
+  const overSoftCap = photoCount > 20 && !atHardCap;
   const atSoftCap = photoCount >= 20 && !atHardCap;
+  const [softCapDismissed, setSoftCapDismissed] = useState(false);
+  // Reset the dismissal once the user falls back under the soft cap so the
+  // banner reappears if they later climb past 20 again.
+  useEffect(() => {
+    if (photoCount <= 20) setSoftCapDismissed(false);
+  }, [photoCount]);
+  const showSoftCapBanner = overSoftCap && !softCapDismissed;
   const dropStyleEffective: React.CSSProperties = atHardCap
     ? { ...dropStyle, opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }
     : dropStyle;
@@ -1850,10 +1861,6 @@ export default function Page() {
                 <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
                   Maximum of 30 photos per journal reached. Remove photos to upload more.
                 </div>
-              ) : atSoftCap ? (
-                <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
-                  For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate.
-                </div>
               ) : (
                 <HelperText>Best with 5–20 photos. Add the moments that mattered most.</HelperText>
               )}
@@ -1876,8 +1883,13 @@ export default function Page() {
 
             {photos.length > 0 && (
               <div style={{ marginTop: 12 }}>
-                <div className="text-ink font-semibold" style={{ fontSize: 13, marginBottom: 4 }}>
-                  {photos.length} photo{photos.length > 1 ? "s" : ""} added
+                <div
+                  className={overSoftCap ? "text-stone font-semibold" : "text-ink font-semibold"}
+                  style={{ fontSize: 13, marginBottom: 4 }}
+                >
+                  {overSoftCap
+                    ? `${photoCount} photos added · generation will be slower`
+                    : `${photoCount} of 20 photos added`}
                 </div>
                 {uploadErrors.length > 0 && (
                   <div className="text-stone" style={{ fontSize: 12, marginBottom: 6 }}>
@@ -1982,6 +1994,45 @@ export default function Page() {
                     )}
                   />
                 </div>
+                {showSoftCapBanner && (
+                  <div
+                    role="status"
+                    className="font-body"
+                    style={{
+                      marginTop: 12,
+                      padding: "10px 12px",
+                      background: "rgba(196, 164, 90, 0.12)",
+                      border: "1px solid rgba(196, 164, 90, 0.4)",
+                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      fontSize: 13,
+                      color: "#8B6914",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>
+                      {`${photoCount} photos — you've got a story to tell. Heads up: this many will take a bit longer to generate.`}
+                    </span>
+                    <button
+                      onClick={() => setSoftCapDismissed(true)}
+                      aria-label="Dismiss"
+                      className="cursor-pointer"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "inherit",
+                        padding: 2,
+                        fontSize: 14,
+                        lineHeight: 1,
+                        opacity: 0.6,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2284,10 +2335,6 @@ export default function Page() {
               <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
                 Maximum of 30 photos per journal reached. Remove photos to upload more.
               </div>
-            ) : atSoftCap ? (
-              <div style={{ color: "var(--color-accent)", fontSize: 13, marginTop: 8, lineHeight: 1.5, padding: "0 8px" }}>
-                For the best journal experience, we recommend 15 photos or fewer. Journals with more than 20 photos may be slower to generate.
-              </div>
             ) : (
               <HelperText>Best with 5–20 photos.</HelperText>
             )}
@@ -2309,8 +2356,54 @@ export default function Page() {
           </div>
 
           {photos.length > 0 && (
-            <div className="text-ink font-semibold" style={{ fontSize: 13, marginTop: 12, marginBottom: 12 }}>
-              {photos.length} photo{photos.length > 1 ? "s" : ""} added
+            <div
+              className={overSoftCap ? "text-stone font-semibold" : "text-ink font-semibold"}
+              style={{ fontSize: 13, marginTop: 12, marginBottom: 12 }}
+            >
+              {overSoftCap
+                ? `${photoCount} photos added · generation will be slower`
+                : `${photoCount} of 20 photos added`}
+            </div>
+          )}
+
+          {showSoftCapBanner && (
+            <div
+              role="status"
+              className="font-body"
+              style={{
+                marginTop: 4,
+                marginBottom: 12,
+                padding: "10px 12px",
+                background: "rgba(196, 164, 90, 0.12)",
+                border: "1px solid rgba(196, 164, 90, 0.4)",
+                borderRadius: 4,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                fontSize: 13,
+                color: "#8B6914",
+                lineHeight: 1.5,
+              }}
+            >
+              <span style={{ flex: 1 }}>
+                {`${photoCount} photos — you've got a story to tell. Heads up: this many will take a bit longer to generate.`}
+              </span>
+              <button
+                onClick={() => setSoftCapDismissed(true)}
+                aria-label="Dismiss"
+                className="cursor-pointer"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "inherit",
+                  padding: 2,
+                  fontSize: 14,
+                  lineHeight: 1,
+                  opacity: 0.6,
+                }}
+              >
+                ✕
+              </button>
             </div>
           )}
 
