@@ -2,31 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Photo, WordStyleKey, VisualStyleKey, LengthKey } from "@/app/lib/types";
-import { cleanJson, LE } from "@/app/lib/constants";
+import { Photo, LengthKey } from "@/app/lib/types";
+import { cleanJson, LE, formatDate } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
 import { batchRewritePrompt } from "@/app/lib/prompts";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
+import { useJournal } from "@/app/context/JournalContext";
 import { Button, Pill, PillGroup } from "./ui";
 
 interface RewriteAllProps {
-  photos: Photo[];
-  onUpdate: (id: number, field: string, value: string) => void;
-  title: string;
-  brief: string;
-  wordStyle: WordStyleKey;
-  visualStyle: VisualStyleKey;
-  dateDisplay: string;
-  length: LengthKey;
-  onLengthChange: (l: LengthKey) => void;
-  /** Called whenever the user accepts one or more AI rewrites. Lets the
-   * parent snapshot the ws/len that wrote the now-current journal text
-   * so the regenerate-on-settings-change prompt knows what to compare. */
-  onContentRegenerated?: () => void;
-  journalId?: string | null;
   /** Per-journal rewrite counter (used / 30). When >= 30 the parent
    * page disables the button entirely; we surface the soft warning
-   * inline as the cap approaches. */
+   * inline as the cap approaches. Comes from rateStatus which lives
+   * at the page level, not in journal context. */
   rewritesUsed?: number;
   rewritesRemaining?: number;
 }
@@ -38,10 +26,32 @@ interface StagedResult {
 }
 
 export default function RewriteAll({
-  photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd,
-  length: len, onLengthChange, onContentRegenerated,
-  journalId, rewritesUsed, rewritesRemaining,
+  rewritesUsed, rewritesRemaining,
 }: RewriteAllProps) {
+  const { state, dispatch } = useJournal();
+  const {
+    photos,
+    tripTitle: title,
+    tripBrief: brief,
+    ws,
+    vk,
+    len,
+    startDate,
+    endDate,
+    currentJournalId: journalId,
+  } = state;
+  const dd = startDate
+    ? endDate
+      ? `${formatDate(startDate)} — ${formatDate(endDate)}`
+      : formatDate(startDate)
+    : "";
+  const up = (id: number, field: string, value: string) =>
+    dispatch({ type: "UPDATE_PHOTO_FIELD", id, field: field as keyof Photo, value });
+  const onLengthChange = (v: LengthKey) => dispatch({ type: "SET_LEN", value: v });
+  // After the user accepts staged rewrites, snapshot ws/len so the
+  // regenerate-on-settings-change confirmation knows what produced the
+  // current journal text.
+  const onContentRegenerated = () => dispatch({ type: "SET_GEN_SNAPSHOT", ws, len });
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
   const cancelRef = useRef(false);

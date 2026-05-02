@@ -1744,7 +1744,7 @@ function PageInner() {
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+              <RewriteAll rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -2103,7 +2103,7 @@ function PageInner() {
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+            <RewriteAll rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />
