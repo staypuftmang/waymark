@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Photo, WordStyleKey } from "@/app/lib/types";
+import { Photo } from "@/app/lib/types";
 import { aiCall } from "@/app/lib/ai";
 import { rewriteCaptionPrompt, rewriteNotesPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
+import { useJournal } from "@/app/context/JournalContext";
 import AiButton from "./AiButton";
 import AiSuggestion from "./AiSuggestion";
 import HelperText from "./HelperText";
@@ -12,34 +13,26 @@ interface PhotoCardProps {
   photo: Photo;
   index: number;
   total: number;
-  onUpdate: (id: number, field: string, value: string) => void;
-  onRemove: (id: number) => void;
-  title: string;
-  brief: string;
-  wordStyle: WordStyleKey;
-  dateDisplay: string;
-  isCover: boolean;
-  onToggleCover: (id: number) => void;
   dragHandleProps?: Record<string, unknown>;
-  /** Active journal id (when known) for per-journal rate limiting. */
-  journalId?: string | null;
 }
 
 export default function PhotoCard({
   photo: p,
   index: idx,
   total,
-  onUpdate: up,
-  onRemove: rm,
-  title,
-  brief,
-  wordStyle: ws,
-  dateDisplay: dd,
-  isCover,
-  onToggleCover,
   dragHandleProps,
-  journalId,
 }: PhotoCardProps) {
+  // Pull journal context: title/brief/voice for prompt building, currentJournalId
+  // for per-journal rate limiting, coverPhotoId to derive isCover, dispatch for
+  // photo-field updates and remove/toggle-cover actions. The parent no longer
+  // forwards any of these as props.
+  const { state, dispatch } = useJournal();
+  const { tripTitle: title, tripBrief: brief, ws, currentJournalId: journalId, coverPhotoId } = state;
+  const isCover = coverPhotoId === p.id;
+  const up = (id: number, field: string, value: string) =>
+    dispatch({ type: "UPDATE_PHOTO_FIELD", id, field: field as keyof Photo, value });
+  const rm = (id: number) => dispatch({ type: "REMOVE_PHOTO", id });
+  const onToggleCover = (id: number) => dispatch({ type: "TOGGLE_COVER", id });
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
   const [loadingParagraph, setLP] = useState(false);

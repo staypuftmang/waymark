@@ -1988,16 +1988,7 @@ function PageInner() {
                   photo={p}
                   index={i}
                   total={total}
-                  onUpdate={updatePhoto}
-                  onRemove={removePhoto}
-                  title={tripTitle}
-                  brief={tripBrief}
-                  wordStyle={ws}
-                  dateDisplay={dateDisplay}
-                  isCover={coverPhotoId === p.id}
-                  onToggleCover={toggleCover}
                   dragHandleProps={handleProps}
-                    journalId={currentJournalId}
                 />
               )}
               renderOverlay={(p) => (
