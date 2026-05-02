@@ -1,5 +1,11 @@
 import { supabase } from "./supabase";
 import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey } from "./types";
+import {
+  PHOTOS_BUCKET,
+  deleteJournalPhotos as deleteJournalPhotoStorage,
+  isStoragePath,
+  uploadPhoto,
+} from "./photoStorage";
 
 export type JournalMode = "quick" | "full";
 
@@ -160,25 +166,58 @@ export async function saveJournalMetadata(
   return row.id as string;
 }
 
+export interface SyncJournalPhotosResult {
+  /** clientId → DB row UUID. Used by the caller to target individual
+   * rows for later text updates. */
+  remoteIdMap: Record<number, string>;
+  /** Photos whose src changed during the sync (base64 → storage path).
+   * The caller should dispatch these into state so the in-memory photo
+   * src matches what was just persisted, otherwise the next save would
+   * re-upload the same base64 to a fresh storage path. */
+  srcUpdates: Array<{ id: number; src: string }>;
+}
+
 /**
  * Wholesale delete + reinsert of every journal_photos row for a journal.
  * Use only when photos are added, removed, reordered, or the cover assignment
- * changes. Returns a mapping from the client-side photo id to the new DB
- * UUIDs so callers can target individual rows for subsequent text updates.
+ * changes.
+ *
+ * Lazy migration: any photo whose src is still a base64 data URL is
+ * uploaded to the journal-photos bucket here, and the storage path is
+ * what gets persisted in journal_photos.src. Already-migrated photos
+ * (storage paths) pass through untouched.
  */
 export async function syncJournalPhotos(
+  userId: string,
   journalId: string,
   data: JournalData,
-): Promise<Record<number, string>> {
+): Promise<SyncJournalPhotosResult> {
   const { error: delErr } = await supabase
     .from("journal_photos")
     .delete()
     .eq("journal_id", journalId);
   if (delErr) throw delErr;
 
-  if (data.photos.length === 0) return {};
+  if (data.photos.length === 0) return { remoteIdMap: {}, srcUpdates: [] };
 
-  const rows = data.photos.map((p, i) => photoInsertRow(journalId, p, i, data.coverPhotoId));
+  const srcUpdates: Array<{ id: number; src: string }> = [];
+  const photosForInsert: Photo[] = await Promise.all(
+    data.photos.map(async (p) => {
+      if (isStoragePath(p.src)) return p;
+      // Anonymous IDB-restored photos still have base64 srcs even after
+      // sign-in; non-base64 / non-storage strings (e.g. a stray http URL)
+      // get persisted as-is to avoid throwing mid-save.
+      if (!p.src.startsWith("data:")) return p;
+      console.log(`Migrating photo ${p.id} from base64 to Storage for journal ${journalId}`);
+      const path = await uploadPhoto(supabase, userId, journalId, p.id, p.src);
+      srcUpdates.push({ id: p.id, src: path });
+      return { ...p, src: path };
+    }),
+  );
+
+  const rows = photosForInsert.map((p, i) =>
+    photoInsertRow(journalId, p, i, data.coverPhotoId),
+  );
   const { data: inserted, error: insErr } = await supabase
     .from("journal_photos")
     .insert(rows)
@@ -187,12 +226,12 @@ export async function syncJournalPhotos(
 
   const byOrder: Record<number, string> = {};
   (inserted ?? []).forEach((r) => { byOrder[(r as { photo_order: number }).photo_order] = (r as { id: string }).id; });
-  const map: Record<number, string> = {};
-  data.photos.forEach((p, i) => {
+  const remoteIdMap: Record<number, string> = {};
+  photosForInsert.forEach((p, i) => {
     const remoteId = byOrder[i];
-    if (remoteId) map[p.id] = remoteId;
+    if (remoteId) remoteIdMap[p.id] = remoteId;
   });
-  return map;
+  return { remoteIdMap, srcUpdates };
 }
 
 /**
@@ -212,7 +251,18 @@ export async function updatePhotoFields(
   if (error) throw error;
 }
 
-export async function loadJournal(journalId: string): Promise<LoadedJournal> {
+export interface LoadJournalOptions {
+  /** When false, photo src values are returned as raw storage paths (or
+   * legacy base64) without being signed. Used by callers like
+   * duplicateJournal that need the path itself, not a fetchable URL.
+   * Defaults to true (Step 4 will swap in signed URLs for storage paths). */
+  resolveStoragePaths?: boolean;
+}
+
+export async function loadJournal(
+  journalId: string,
+  _opts: LoadJournalOptions = {},
+): Promise<LoadedJournal> {
   const { data: journal, error: journalError } = await supabase
     .from("journals")
     .select("*")
@@ -319,6 +369,14 @@ export async function deleteJournal(userId: string, journalId: string): Promise<
     .eq("id", journalId)
     .eq("user_id", userId);
   if (error) throw error;
+  // Best-effort storage cleanup. Any failure is swallowed: the DB row is
+  // already gone so the user-facing operation has succeeded — orphaned
+  // storage objects are a minor cost compared to a confusing error.
+  try {
+    await deleteJournalPhotoStorage(supabase, userId, journalId);
+  } catch (err) {
+    console.warn("Failed to delete journal photo storage:", err);
+  }
 }
 
 export async function renameJournal(userId: string, journalId: string, title: string): Promise<void> {
@@ -331,17 +389,44 @@ export async function renameJournal(userId: string, journalId: string, title: st
 }
 
 export async function duplicateJournal(userId: string, journalId: string): Promise<string> {
-  const loaded = await loadJournal(journalId);
+  // resolveStoragePaths: false keeps photos[i].src as the raw storage
+  // path (or legacy base64) so the copy() call below can target the
+  // bucket object directly instead of a signed URL we can't dereference.
+  const loaded = await loadJournal(journalId, { resolveStoragePaths: false });
   const original = loaded.data;
   const copyTitle = `${original.tripTitle || "Untitled Journal"} (copy)`;
-  const copy: JournalData = {
+  const newId = await saveJournalMetadata(userId, null, {
     ...original,
     id: null,
     tripTitle: copyTitle,
     coverTitle: original.coverTitleEdited ? original.coverTitle : copyTitle,
-  };
-  const newId = await saveJournalMetadata(userId, null, copy);
-  await syncJournalPhotos(newId, { ...copy, id: newId });
+  });
+
+  // Storage objects are scoped to {userId}/{journalId}/ — the duplicate
+  // needs its own copies so deleting the original doesn't break it.
+  // Photos still in legacy base64 form get uploaded fresh; storage paths
+  // are server-side copied to the new journal's folder.
+  const copiedPhotos: Photo[] = await Promise.all(
+    original.photos.map(async (p) => {
+      if (isStoragePath(p.src)) {
+        const newPath = `${userId}/${newId}/${p.id}.jpg`;
+        const { error } = await supabase.storage
+          .from(PHOTOS_BUCKET)
+          .copy(p.src, newPath);
+        if (error) throw error;
+        return { ...p, src: newPath };
+      }
+      return p;
+    }),
+  );
+
+  await syncJournalPhotos(userId, newId, {
+    ...original,
+    id: newId,
+    tripTitle: copyTitle,
+    coverTitle: original.coverTitleEdited ? original.coverTitle : copyTitle,
+    photos: copiedPhotos,
+  });
   return newId;
 }
 
@@ -351,6 +436,6 @@ export async function duplicateJournal(userId: string, journalId: string): Promi
  */
 export async function saveJournal(userId: string, data: JournalData): Promise<string> {
   const journalId = await saveJournalMetadata(userId, data.id, data);
-  await syncJournalPhotos(journalId, { ...data, id: journalId });
+  await syncJournalPhotos(userId, journalId, { ...data, id: journalId });
   return journalId;
 }

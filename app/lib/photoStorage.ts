@@ -1,9 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { supabaseAdmin } from "./supabase-admin";
 
 export const PHOTOS_BUCKET = "journal-photos";
 
-const SIGNED_URL_TTL_SECONDS = 60 * 60;
+export const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 // A storage path looks like `<userUUID>/<journalUUID>/<photoId>.jpg`.
 // We detect it by the leading UUID + slash. Anything else (data URLs, bare
@@ -70,21 +69,6 @@ export async function getPhotoUrl(
   storagePath: string,
 ): Promise<string> {
   const { data, error } = await client.storage
-    .from(PHOTOS_BUCKET)
-    .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
-  if (error) throw error;
-  return data.signedUrl;
-}
-
-/**
- * Server-side signed URL for public journal rendering. The bucket is
- * private, so /j/[slug] (rendered with the service-role client) signs
- * each photo URL before handing it to the client. The TTL matches the
- * page's `revalidate = 3600`, so cached HTML never points at a URL that
- * has already expired.
- */
-export async function getPublicPhotoUrl(storagePath: string): Promise<string> {
-  const { data, error } = await supabaseAdmin.storage
     .from(PHOTOS_BUCKET)
     .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
   if (error) throw error;

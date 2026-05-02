@@ -458,8 +458,18 @@ export function JournalProvider({ children }: JournalProviderProps) {
           data.photos.some((p, i) => last[i]?.id !== p.id);
 
         if (structuralChange) {
-          const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
-          remoteIdMapRef.current = map;
+          const { remoteIdMap, srcUpdates } = await syncJournalPhotos(
+            user.id, journalId, { ...data, id: journalId },
+          );
+          remoteIdMapRef.current = remoteIdMap;
+          // Reflect base64 → storage-path migrations back into state so
+          // the next save doesn't re-upload the same content. Also update
+          // the local data snapshot used to seed lastSavedPhotosRef below.
+          for (const u of srcUpdates) {
+            dispatch({ type: "UPDATE_PHOTO_FIELD", id: u.id, field: "src", value: u.src });
+            const idx = data.photos.findIndex((p) => p.id === u.id);
+            if (idx >= 0) data.photos[idx] = { ...data.photos[idx], src: u.src };
+          }
         } else {
           const dirty: Array<[number, PhotoTextFields]> = [];
           for (let i = 0; i < data.photos.length; i++) {
@@ -486,8 +496,15 @@ export function JournalProvider({ children }: JournalProviderProps) {
               (r) => r.status === "rejected" && String((r.reason as Error)?.message).includes("missing remote id"),
             );
             if (anyMissingRemote) {
-              const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
-              remoteIdMapRef.current = map;
+              const { remoteIdMap, srcUpdates } = await syncJournalPhotos(
+                user.id, journalId, { ...data, id: journalId },
+              );
+              remoteIdMapRef.current = remoteIdMap;
+              for (const u of srcUpdates) {
+                dispatch({ type: "UPDATE_PHOTO_FIELD", id: u.id, field: "src", value: u.src });
+                const idx = data.photos.findIndex((p) => p.id === u.id);
+                if (idx >= 0) data.photos[idx] = { ...data.photos[idx], src: u.src };
+              }
             } else {
               const firstFailure = results.find((r) => r.status === "rejected");
               if (firstFailure && firstFailure.status === "rejected") throw firstFailure.reason;
