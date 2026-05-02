@@ -10,6 +10,7 @@ import {
   type ActionType,
 } from "@/app/lib/rateLimit";
 import { apiError, parseBody, withAuth, z } from "@/app/lib/api";
+import { acquireSlot, releaseSlot } from "@/app/lib/concurrency";
 
 const client = new Anthropic();
 
@@ -255,6 +256,15 @@ export const POST = withAuth(
       return meta;
     }
 
+    // Server-wide concurrency cap. If the warm instance already has 20
+    // Anthropic calls in flight, we 503 the new one rather than pile on
+    // and risk tripping Anthropic's org-level rate limits.
+    if (!acquireSlot()) {
+      return apiError(503, "server_busy",
+        "Our AI is handling a lot of requests right now. Please try again in a few seconds.",
+      );
+    }
+
     try {
       let text = "";
       let model = PRIMARY_MODEL;
@@ -284,6 +294,10 @@ export const POST = withAuth(
     } catch (e) {
       console.error("API generate error:", e instanceof Error ? e.message : "unknown");
       return apiError(500, "generation_failed", "Generation failed");
+    } finally {
+      // Always release — covers success, fallback, primary error, and
+      // every other path through the inner try/catch.
+      releaseSlot();
     }
   },
   { required: false },

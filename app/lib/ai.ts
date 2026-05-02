@@ -44,10 +44,18 @@ export interface AiResult {
 let onFallbackUsed: (() => void) | null = null;
 let onRateLimited: ((info: RateLimitErrorInfo) => void) | null = null;
 let onRateStatus: ((status: RateLimitStatus) => void) | null = null;
+let onBusy: ((message: string) => void) | null = null;
 
 export function setFallbackListener(fn: (() => void) | null) { onFallbackUsed = fn; }
 export function setRateLimitListener(fn: ((info: RateLimitErrorInfo) => void) | null) { onRateLimited = fn; }
 export function setRateStatusListener(fn: ((status: RateLimitStatus) => void) | null) { onRateStatus = fn; }
+/**
+ * Fired when /api/generate returns 503 server_busy and the one-shot
+ * 3-second retry also fails. Page wires this to setToast so the user
+ * sees a friendly "Waymark is busy right now" instead of a silent
+ * empty result.
+ */
+export function setBusyListener(fn: ((message: string) => void) | null) { onBusy = fn; }
 
 async function authHeader(): Promise<Record<string, string>> {
   try {
@@ -89,6 +97,12 @@ export async function aiCall(
   const images = opts.images;
   const maxTokens = opts.maxTokens ?? 1000;
 
+  // 503 server_busy gets exactly one auto-retry after 3s, regardless of
+  // the generic retry counter below. After the retry also fails we surface
+  // a friendly busy toast via the listener and return "" so the caller's
+  // generation loop continues without inserting an empty result.
+  let busyRetryUsed = false;
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const auth = await authHeader();
@@ -97,6 +111,20 @@ export async function aiCall(
         headers: { "Content-Type": "application/json", ...auth },
         body: JSON.stringify({ prompt, maxTokens, image, images, actionType, journalId, record }),
       });
+
+      if (r.status === 503) {
+        // Drain the body so the connection can be reused.
+        try { await r.json(); } catch { /* ignore */ }
+        if (!busyRetryUsed) {
+          busyRetryUsed = true;
+          await new Promise((res) => setTimeout(res, 3000));
+          continue; // retry once
+        }
+        if (onBusy) {
+          onBusy("Waymark is busy right now — try again in a moment.");
+        }
+        return "";
+      }
 
       if (r.status === 429) {
         try {

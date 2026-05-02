@@ -7,7 +7,7 @@ import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
 import { VS, WS, LO, LE, formatDate } from "@/app/lib/constants";
 import { tripBriefFromPhotosPrompt } from "@/app/lib/prompts";
-import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
+import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, setBusyListener, fetchRateStatus } from "@/app/lib/ai";
 import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { loadState, clearState, SavedState } from "@/app/lib/storage";
@@ -457,6 +457,12 @@ function PageInner() {
       if (!info.signedIn) {
         track("rate_limit_signin_prompt_shown", { limitType: info.limitType });
       }
+    });
+    setBusyListener((message) => {
+      // 503 server_busy + the one-shot 3s retry both failed — show a
+      // gentle toast instead of letting the empty result land silently.
+      setToast(message);
+      setTimeout(() => setToast(null), 5000);
     });
     setRateStatusListener((status) => {
       setRateStatus(status);
