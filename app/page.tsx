@@ -12,7 +12,7 @@ import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
-import { JournalProvider } from "@/app/context/JournalContext";
+import { JournalProvider, useJournal, type SaveStatus } from "@/app/context/JournalContext";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -77,7 +77,6 @@ function formatResetIn(seconds: number): string {
 }
 
 /* ── Header ── */
-type SaveStatus = "idle" | "saving" | "saved" | "offline";
 
 function SaveIndicator({ status }: { status: SaveStatus }) {
   if (status === "idle") return null;
@@ -211,28 +210,102 @@ export default function Page() {
 }
 
 function PageInner() {
-  const [mode, setMode] = useState<Mode>(null);
-  const [step, setStep] = useState(0);
-  const [tripTitle, setTripTitle] = useState("");
-  const [tripBrief, setTripBrief] = useState("");
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [vk, setVk] = useState<VisualStyleKey>("editorial");
-  const [ws, setWs] = useState<WordStyleKey>("poetic");
-  const [len, setLen] = useState<LengthKey>("standard");
-  const [lo, setLo] = useState<LayoutKey>("classic");
-  // Snapshot of ws / len from the last successful AI run on this journal.
-  // Drives the regenerate-on-settings-change confirmation. null means "no
-  // AI yet" (fresh journal) — no prompt fires until at least one run lands.
-  const [genWs, setGenWs] = useState<WordStyleKey | null>(null);
-  const [genLen, setGenLen] = useState<LengthKey | null>(null);
+  // ── Journal data state lives in the JournalContext reducer. We
+  //    destructure into local aliases so the existing JSX/handler call
+  //    sites can stay unchanged, then provide setter aliases below that
+  //    forward to dispatch. ──
+  const { state, dispatch, resetSaveCaches } = useJournal();
+  const {
+    mode, step,
+    tripTitle, tripBrief, startDate, endDate,
+    photos,
+    vk, ws, len, lo,
+    genWs, genLen,
+    coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited,
+    currentJournalId, shareSlug, isPublic,
+    saveStatus, quickGenerating, genProgress,
+  } = state;
+
+  // Setter aliases — keep call sites short. Each is a stable callback bound
+  // to dispatch.
+  const setMode = useCallback((v: Mode) => dispatch({ type: "SET_MODE", mode: v }), [dispatch]);
+  const setStep = useCallback((v: number) => dispatch({ type: "SET_STEP", step: v }), [dispatch]);
+  const setTripTitle = useCallback((v: string) => dispatch({ type: "SET_TITLE", value: v }), [dispatch]);
+  const setTripBrief = useCallback((v: string) => dispatch({ type: "SET_BRIEF", value: v }), [dispatch]);
+  const setStartDate = useCallback((v: Date | null) => dispatch({ type: "SET_START_DATE", value: v }), [dispatch]);
+  const setEndDate = useCallback((v: Date | null) => dispatch({ type: "SET_END_DATE", value: v }), [dispatch]);
+  const setVk = useCallback((v: VisualStyleKey) => dispatch({ type: "SET_VK", value: v }), [dispatch]);
+  const setWs = useCallback((v: WordStyleKey) => dispatch({ type: "SET_WS", value: v }), [dispatch]);
+  const setLen = useCallback((v: LengthKey) => dispatch({ type: "SET_LEN", value: v }), [dispatch]);
+  const setLo = useCallback((v: LayoutKey) => dispatch({ type: "SET_LO", value: v }), [dispatch]);
+  const setGenSnapshot = useCallback(
+    (newWs: WordStyleKey | null, newLen: LengthKey | null) =>
+      dispatch({ type: "SET_GEN_SNAPSHOT", ws: newWs, len: newLen }),
+    [dispatch],
+  );
+  // Individual setGenWs/setGenLen wrappers preserve the call-site shape
+  // `setGenWs(x); setGenLen(y);` from the pre-context code. Each one updates
+  // its half of the snapshot pair while leaving the other unchanged.
+  const setGenWs = useCallback(
+    (v: WordStyleKey | null) => dispatch({ type: "SET_GEN_SNAPSHOT", ws: v, len: state.genLen }),
+    [dispatch, state.genLen],
+  );
+  const setGenLen = useCallback(
+    (v: LengthKey | null) => dispatch({ type: "SET_GEN_SNAPSHOT", ws: state.genWs, len: v }),
+    [dispatch, state.genWs],
+  );
+  // Photos: only used for whole-array assignments (load / reset). Functional
+  // setPhotos((prev) => …) call sites are rewritten to specific reducer
+  // actions (ADD_PHOTOS, REMOVE_PHOTO, REORDER_PHOTOS, UPDATE_PHOTO_FIELD)
+  // because closure-captured `state.photos` would go stale across awaits.
+  const setPhotos = useCallback(
+    (v: Photo[]) => dispatch({ type: "SET_PHOTOS", photos: v }),
+    [dispatch],
+  );
+  const setCoverPhotoId = useCallback(
+    (id: number | null) => dispatch({ type: "SET_COVER_PHOTO_ID", id }),
+    [dispatch],
+  );
+  const setCoverTitle = useCallback(
+    (v: string) => dispatch({ type: "SET_COVER_TITLE", value: v }),
+    [dispatch],
+  );
+  const setCoverSubtitle = useCallback(
+    (v: string) => dispatch({ type: "SET_COVER_SUBTITLE", value: v }),
+    [dispatch],
+  );
+  const setCoverTitleEdited = useCallback(
+    (v: boolean) => dispatch({ type: "MARK_COVER_TITLE_EDITED", value: v }),
+    [dispatch],
+  );
+  const setCurrentJournalId = useCallback(
+    (id: string | null) => dispatch({ type: "SET_JOURNAL_ID", id }),
+    [dispatch],
+  );
+  // SET_SHARE is atomic over (slug, isPublic). Always set both in one
+  // dispatch — separate setters would race on closure-captured state.
+  const setShare = useCallback(
+    (slug: string | null, isPub: boolean) => dispatch({ type: "SET_SHARE", slug, isPublic: isPub }),
+    [dispatch],
+  );
+  const setSaveStatus = useCallback(
+    (v: SaveStatus) => dispatch({ type: "SET_SAVE_STATUS", value: v }),
+    [dispatch],
+  );
+  const setQuickGenerating = useCallback(
+    (v: boolean) => dispatch({ type: "SET_QUICK_GENERATING", value: v }),
+    [dispatch],
+  );
+  const setGenProgress = useCallback(
+    (v: { current: number; total: number } | null) => dispatch({ type: "SET_GEN_PROGRESS", value: v }),
+    [dispatch],
+  );
+
+  // ── UI / orchestration state stays local (modals, toast, etc.) ──
   const [regenConfirm, setRegenConfirm] = useState<{
     onRegenerate: () => void;
     onKeepCurrent: () => void;
   } | null>(null);
-  const [quickGenerating, setQuickGenerating] = useState(false);
-  const [genProgress, setGenProgress] = useState<{ current: number; total: number } | null>(null);
   useUnloadGuard(quickGenerating);
   const [savedJournal, setSavedJournal] = useState<SavedState | null>(null);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
@@ -241,11 +314,6 @@ function PageInner() {
   const [appReady, setAppReady] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ active: boolean; current: number; total: number }>({ active: false, current: 0, total: 0 });
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
-  // Cover photo state
-  const [coverPhotoId, setCoverPhotoId] = useState<number | null>(null);
-  const [coverTitle, setCoverTitle] = useState<string>("");
-  const [coverSubtitle, setCoverSubtitle] = useState<string>("");
-  const [coverTitleEdited, setCoverTitleEdited] = useState(false);
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
@@ -255,10 +323,6 @@ function PageInner() {
   const { user } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
-  const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
-  const [shareSlug, setShareSlug] = useState<string | null>(null);
-  const [isPublic, setIsPublic] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [journals, setJournals] = useState<JournalSummary[]>([]);
   const [journalsLoaded, setJournalsLoaded] = useState(false);
   const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
@@ -288,8 +352,7 @@ function PageInner() {
   // Load current share status for the preview header.
   useEffect(() => {
     if (!user || !currentJournalId) {
-      setShareSlug(null);
-      setIsPublic(false);
+      setShare(null, false);
       return;
     }
     let cancelled = false;
@@ -305,8 +368,7 @@ function PageInner() {
         if (!res.ok) return;
         const d = (await res.json()) as { slug: string | null; isPublic: boolean };
         if (cancelled) return;
-        setShareSlug(d.slug ?? null);
-        setIsPublic(!!d.isPublic);
+        setShare(d.slug ?? null, !!d.isPublic);
       } catch {
         // ignore
       }
@@ -663,9 +725,11 @@ function PageInner() {
       setUploadProgress({ active: true, current: i + 1, total: validFiles.length });
       try {
         const src = await compressImage(validFiles[i]);
-        setPhotos((p) => [
-          ...p,
-          {
+        // Use ADD_PHOTOS so the reducer composes against the latest photos
+        // — closure-captured state.photos would go stale across awaits.
+        dispatch({
+          type: "ADD_PHOTOS",
+          photos: [{
             id: Date.now() + Math.random(),
             src,
             caption: "",
@@ -674,8 +738,8 @@ function PageInner() {
             aiCaption: "",
             aiNotes: "",
             aiParagraph: "",
-          },
-        ]);
+          }],
+        });
       } catch {
         errors.push(validFiles[i].name);
       }
@@ -716,20 +780,19 @@ function PageInner() {
   }, [photos.length, processFiles]);
 
   const updatePhoto = (id: number, field: string, value: string) =>
-    setPhotos((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
+    dispatch({ type: "UPDATE_PHOTO_FIELD", id, field: field as keyof Photo, value });
 
   const removePhoto = (id: number) => {
-    setPhotos((p) => p.filter((x) => x.id !== id));
-    // Clear cover selection if the cover photo is deleted (keep title/subtitle)
-    if (coverPhotoId === id) setCoverPhotoId(null);
+    // Reducer also clears cover assignment if the removed photo was the cover.
+    dispatch({ type: "REMOVE_PHOTO", id });
   };
 
   const toggleCover = (id: number) => {
-    setCoverPhotoId((current) => (current === id ? null : id));
+    dispatch({ type: "TOGGLE_COVER", id });
   };
 
   const reorderPhotos = (next: Photo[]) => {
-    setPhotos(next);
+    dispatch({ type: "REORDER_PHOTOS", photos: next });
   };
 
   // Auto-sync coverTitle ← tripTitle until user manually edits coverTitle
@@ -740,30 +803,17 @@ function PageInner() {
   }, [tripTitle, coverTitleEdited]);
 
   const updateCoverTitle = (value: string) => {
-    setCoverTitle(value);
-    setCoverTitleEdited(true);
+    // Single dispatch sets the title AND marks it as user-edited.
+    dispatch({ type: "SET_COVER_TITLE", value, markEdited: true });
   };
 
 
   const doReset = () => {
     clearState();
-    setMode(null);
-    setStep(0);
-    setPhotos([]);
-    setTripTitle("");
-    setTripBrief("");
-    setStartDate(null);
-    setEndDate(null);
-    setCoverPhotoId(null);
-    setCoverTitle("");
-    setCoverSubtitle("");
-    setCoverTitleEdited(false);
-    setGenWs(null);
-    setGenLen(null);
-    setCurrentJournalId(null);
-    lastSavedPhotosRef.current = null;
-    lastSavedCoverIdRef.current = null;
-    remoteIdMapRef.current = {};
+    // Single atomic reset of all journal data — reducer wipes everything
+    // back to initial state.
+    dispatch({ type: "RESET" });
+    resetSaveCaches();
   };
 
   // ── Journal management actions ──
@@ -2469,7 +2519,7 @@ function PageInner() {
           journalId={currentJournalId}
           shareSlug={shareSlug}
           isPublic={isPublic}
-          onShareChange={(slug, isPub) => { setShareSlug(slug); setIsPublic(isPub); }}
+          onShareChange={(slug, isPub) => setShare(slug, isPub)}
           onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }}
         />
       )}
