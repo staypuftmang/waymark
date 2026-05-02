@@ -1,40 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { Photo, WordStyleKey } from "@/app/lib/types";
+import { Photo } from "@/app/lib/types";
 import { aiCall } from "@/app/lib/ai";
 import { rewriteCaptionPrompt, rewriteNotesPrompt, rewriteParagraphPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
+import { useJournal } from "@/app/context/JournalContext";
 import AiButton from "./AiButton";
 
 interface PhotoStyleRowProps {
   photo: Photo;
-  onUpdate: (id: number, field: string, value: string) => void;
-  title: string;
-  brief: string;
-  wordStyle: WordStyleKey;
-  dateDisplay: string;
-  isCover: boolean;
-  onToggleCover: (id: number) => void;
   dragHandleProps?: Record<string, unknown>;
   index?: number;
   total?: number;
-  journalId?: string | null;
 }
 
 export default function PhotoStyleRow({
   photo: p,
-  onUpdate: up,
-  title,
-  brief,
-  wordStyle: ws,
-  dateDisplay: dd,
-  isCover,
-  onToggleCover,
   dragHandleProps,
   index,
   total,
-  journalId,
 }: PhotoStyleRowProps) {
+  // Pulled from context — same shape as PhotoCard.
+  const { state, dispatch } = useJournal();
+  const { tripTitle: title, tripBrief: brief, ws, currentJournalId: journalId, coverPhotoId } = state;
+  const isCover = coverPhotoId === p.id;
+  const up = (id: number, field: string, value: string) =>
+    dispatch({ type: "UPDATE_PHOTO_FIELD", id, field: field as keyof Photo, value });
+  const onToggleCover = (id: number) => dispatch({ type: "TOGGLE_COVER", id });
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
   const [loadingParagraph, setLP] = useState(false);

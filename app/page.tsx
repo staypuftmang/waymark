@@ -1756,17 +1756,9 @@ function PageInner() {
                 renderItem={(p, i, total, handleProps) => (
                   <PhotoStyleRow
                     photo={p}
-                    onUpdate={updatePhoto}
-                    title={tripTitle}
-                    brief={tripBrief}
-                    wordStyle={ws}
-                    dateDisplay={dateDisplay}
-                    isCover={coverPhotoId === p.id}
-                    onToggleCover={toggleCover}
                     dragHandleProps={handleProps}
                     index={i}
                     total={total}
-                    journalId={currentJournalId}
                   />
                 )}
                 renderOverlay={(p) => (
@@ -2125,17 +2117,9 @@ function PageInner() {
               renderItem={(p, i, total, handleProps) => (
                 <PhotoStyleRow
                   photo={p}
-                  onUpdate={updatePhoto}
-                  title={tripTitle}
-                  brief={tripBrief}
-                  wordStyle={ws}
-                  dateDisplay={dateDisplay}
-                  isCover={coverPhotoId === p.id}
-                  onToggleCover={toggleCover}
                   dragHandleProps={handleProps}
                   index={i}
                   total={total}
-                  journalId={currentJournalId}
                 />
               )}
               renderOverlay={(p) => (
