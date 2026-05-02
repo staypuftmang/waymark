@@ -5,14 +5,15 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { track } from "@vercel/analytics";
 import { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
-import { VS, WS, LO, LE, formatDate, cleanJson } from "@/app/lib/constants";
-import { quickCreatePrompt, tripBriefFromPhotosPrompt, batchRewritePrompt } from "@/app/lib/prompts";
+import { VS, WS, LO, LE, formatDate } from "@/app/lib/constants";
+import { tripBriefFromPhotosPrompt } from "@/app/lib/prompts";
 import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
 import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
 import { JournalProvider, useJournal, type SaveStatus } from "@/app/context/JournalContext";
+import { useJournalGeneration } from "@/app/context/useJournalGeneration";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -777,154 +778,20 @@ function PageInner() {
 
   const ok = tripTitle.trim() && photos.length > 0;
 
-  // True once any photo carries AI output — signals "returning journal" and
-  // flips CTAs from "Generate Journal" to "Update Journal". Never overwrite
-  // reviewed AI content unless the user explicitly hits Rewrite All.
-  const hasAnyAi = photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
-
-  // Cancel signal for the in-progress AI batch. Set true by the overlay's
-  // Cancel button; the loop in generateMissingAi reads it between iterations
-  // and bails early. Reset to false at the start of each new run.
-  const cancelGenerationRef = useRef(false);
-  const [cancelDisabled, setCancelDisabled] = useState(false);
-
-  const cancelGeneration = useCallback(() => {
-    if (cancelDisabled) return;
-    cancelGenerationRef.current = true;
-    setCancelDisabled(true);
-    setTimeout(() => setCancelDisabled(false), 800);
-  }, [cancelDisabled]);
-
-  // Generate AI for photos missing AI content. Returns the updated photos
-  // array so callers can decide where to route next.
-  const generateMissingAi = async (mode: "quick" | "full") => {
-    const missing = photos.filter((p) => !(p.aiCaption || p.aiNotes || p.aiParagraph));
-    if (missing.length === 0) return { generated: 0, cancelled: false };
-
-    cancelGenerationRef.current = false;
-    setQuickGenerating(true);
-    setGenProgress({ current: 0, total: missing.length });
-    track("ai_generated", { mode, photoCount: missing.length, wordStyle: ws, visualStyle: vk });
-
-    // Seed previousCaptions with existing AI captions so new generations stay
-    // stylistically consistent with what the user already has.
-    const previousCaptions: string[] = photos
-      .map((p) => p.aiCaption)
-      .filter((c): c is string => !!c);
-
-    // First-batch-on-fresh-journal logic: if the journal has no prior AI
-    // content, the very first AI call records ONE journal_created row and
-    // counts toward the 10/day creation cap. The remaining calls in the
-    // batch are tagged record:false so they don't eat into the per-journal
-    // 30-rewrite cap on initial creation.
-    const isFreshJournal = !hasAnyAi;
-    let firstCallSent = false;
-
-    let processed = 0;
-    for (let i = 0; i < missing.length; i++) {
-      if (cancelGenerationRef.current) break;
-      setGenProgress({ current: i + 1, total: missing.length });
-      const p = missing[i];
-      const fullIdx = photos.findIndex((ph) => ph.id === p.id);
-      const prompt = quickCreatePrompt(
-        ws, tripTitle, tripBrief, dateDisplay,
-        fullIdx >= 0 ? fullIdx : i,
-        photos.length,
-        previousCaptions,
-        len,
-      );
-      let opts: Parameters<typeof aiCall>[2];
-      if (isFreshJournal) {
-        // First call: journal_created (counts). Subsequent: don't record.
-        opts = firstCallSent
-          ? { actionType: "rewrite_batch_photo", journalId: currentJournalId, record: false }
-          : { actionType: "journal_created", journalId: currentJournalId };
-        firstCallSent = true;
-      } else {
-        // Update Journal: each new photo counts as a batch rewrite.
-        opts = { actionType: "rewrite_batch_photo", journalId: currentJournalId };
-      }
-      const raw = await aiCall(prompt, p.src, opts);
-      // Re-check after the await — the user may have hit Cancel while the
-      // request was in flight. Don't apply a result we no longer want.
-      if (cancelGenerationRef.current) break;
-      if (raw) {
-        try {
-          const obj = JSON.parse(cleanJson(raw));
-          if (obj.caption) { updatePhoto(p.id, "aiCaption", obj.caption); previousCaptions.push(obj.caption); }
-          if (obj.notes) updatePhoto(p.id, "aiNotes", obj.notes);
-          if (obj.paragraph) updatePhoto(p.id, "aiParagraph", obj.paragraph);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      processed++;
-    }
-    const cancelled = cancelGenerationRef.current;
-    cancelGenerationRef.current = false;
-    setQuickGenerating(false);
-    setGenProgress(null);
-    if (processed > 0 && !cancelled) {
-      // Snapshot the settings that produced this content so a later Update
-      // Journal can detect a ws/len change and offer to regenerate.
-      setGenWs(ws);
-      setGenLen(len);
-    }
-    return { generated: processed, cancelled };
-  };
-
-  // Rewrite all photos that already have AI content using the current ws/len.
-  // Used by the regenerate-on-settings-change confirmation. Differs from
-  // generateMissingAi in that it operates on photos with content (using
-  // batchRewritePrompt) rather than blank ones.
-  const regenerateAllAi = async (mode: "quick" | "full") => {
-    const targets = photos.filter((p) => p.aiCaption || p.aiNotes || p.aiParagraph || p.caption || p.notes);
-    if (targets.length === 0) return { generated: 0, cancelled: false };
-
-    cancelGenerationRef.current = false;
-    setQuickGenerating(true);
-    setGenProgress({ current: 0, total: targets.length });
-    track("ai_generated", { mode: `${mode}_regenerate`, photoCount: targets.length, wordStyle: ws, visualStyle: vk });
-
-    const previousOutputs: string[] = [];
-    let processed = 0;
-    for (let i = 0; i < targets.length; i++) {
-      if (cancelGenerationRef.current) break;
-      setGenProgress({ current: i + 1, total: targets.length });
-      const p = targets[i];
-      const capText = p.aiCaption || p.caption;
-      const notesText = p.aiNotes || p.notes;
-      const prompt = batchRewritePrompt(ws, tripTitle, tripBrief, dateDisplay, capText, notesText, previousOutputs, len);
-      const raw = await aiCall(prompt, p.src, { actionType: "rewrite_batch_photo", journalId: currentJournalId });
-      if (cancelGenerationRef.current) break;
-      if (raw) {
-        try {
-          const obj = JSON.parse(cleanJson(raw));
-          if (obj.caption) { updatePhoto(p.id, "aiCaption", obj.caption); previousOutputs.push(obj.caption); }
-          // For Brief, the prompt asks for empty notes — clear any prior pull quote.
-          updatePhoto(p.id, "aiNotes", obj.notes ?? "");
-          if (obj.paragraph) updatePhoto(p.id, "aiParagraph", obj.paragraph);
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      processed++;
-    }
-    const cancelled = cancelGenerationRef.current;
-    cancelGenerationRef.current = false;
-    setQuickGenerating(false);
-    setGenProgress(null);
-    if (processed > 0 && !cancelled) {
-      setGenWs(ws);
-      setGenLen(len);
-    }
-    return { generated: processed, cancelled };
-  };
-
-  // True when the journal already has AI content AND the current ws/len
-  // differ from the snapshot taken at last generation. Drives the prompt.
-  const settingsChangedSinceGeneration =
-    hasAnyAi && genWs !== null && genLen !== null && (ws !== genWs || len !== genLen);
+  // Generation pipeline lives in useJournalGeneration — gives us
+  // generateMissingAi, regenerateAllAi, the cancel handshake, and the
+  // derived hasAnyAi / settingsChangedSinceGeneration booleans. The hook
+  // also provides dateDisplay so we don't compute it twice (the earlier
+  // local dateDisplay was used by runBriefGenerate above; the hook's
+  // value is identical so we shadow it here for the rest of the function).
+  const {
+    generateMissingAi,
+    regenerateAllAi,
+    cancel: cancelGeneration,
+    cancelDisabled,
+    settingsChangedSinceGeneration,
+    hasAnyAi,
+  } = useJournalGeneration();
 
   const quickGenerate = async () => {
     if (settingsChangedSinceGeneration) {
