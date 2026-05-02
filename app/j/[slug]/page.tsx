@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { cache } from "react";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import { isStoragePath } from "@/app/lib/photoStorage";
 import { getPublicPhotoUrl } from "@/app/lib/photoStorage.server";
@@ -7,9 +9,14 @@ import PublicJournalView from "@/app/components/PublicJournalView";
 import { formatDate } from "@/app/lib/constants";
 import type { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
 
-export const revalidate = 3600;
+// Per-visit view tracking requires fresh execution on every request,
+// otherwise inserts only fire on cache misses (~once per hour per slug)
+// and the dashboard counts are off by orders of magnitude.
+export const dynamic = "force-dynamic";
 
 interface PublicJournal {
+  id: string;
+  ownerId: string;
   title: string;
   tripBrief: string;
   startDate: string | null;
@@ -26,6 +33,7 @@ interface PublicJournal {
 
 interface JournalRow {
   id: string;
+  user_id: string;
   title: string | null;
   trip_brief: string | null;
   start_date: string | null;
@@ -52,12 +60,14 @@ interface PhotoRow {
 
 const SLUG_RE = /^[a-z0-9]{8}$/;
 
-async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
+// Cached per-request via React cache() so generateMetadata + the page
+// component share a single Supabase fetch.
+const getPublicJournal = cache(async (slug: string): Promise<PublicJournal | null> => {
   if (!SLUG_RE.test(slug)) return null;
   const { data: journal, error } = await supabaseAdmin
     .from("journals")
     .select(
-      "id, title, trip_brief, start_date, end_date, visual_style, layout, length, cover_title, cover_subtitle, published_at"
+      "id, user_id, title, trip_brief, start_date, end_date, visual_style, layout, length, cover_title, cover_subtitle, published_at"
     )
     .eq("share_slug", slug)
     .eq("is_public", true)
@@ -100,6 +110,8 @@ async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
   const coverPhotoId = coverIdx >= 0 ? photos[coverIdx].id : null;
 
   return {
+    id: journal.id,
+    ownerId: journal.user_id,
     title: journal.title ?? "",
     tripBrief: journal.trip_brief ?? "",
     startDate: journal.start_date,
@@ -113,6 +125,48 @@ async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
     coverPhotoId,
     publishedAt: journal.published_at,
   };
+});
+
+/**
+ * Best-effort fire-and-forget view tracking. Failures are logged but never
+ * surface to the visitor — the page render must not block on the insert,
+ * and an analytics outage shouldn't break the share link.
+ *
+ * Skip rules:
+ *   1. *.vercel.app preview deploys (per spec — only the production
+ *      domain should accumulate stats).
+ *   2. Owner self-views, when the request carries a Supabase Bearer
+ *      token whose user_id matches the journal owner. Note: Waymark's
+ *      auth uses localStorage, not cookies, so a logged-in owner
+ *      browsing to /j/[slug] doesn't actually send this header. The
+ *      check fires for explicit fetch()-style API access — for
+ *      browser-based owner views we'd need cookie-based sessions.
+ */
+async function trackView(journalId: string, ownerId: string): Promise<void> {
+  try {
+    const h = await headers();
+    const host = h.get("host") ?? "";
+    if (host.includes("vercel.app")) return;
+
+    const auth = h.get("authorization");
+    if (auth?.toLowerCase().startsWith("bearer ")) {
+      const token = auth.slice(7).trim();
+      if (token) {
+        const { data } = await supabaseAdmin.auth.getUser(token);
+        if (data.user?.id === ownerId) return;
+      }
+    }
+
+    await supabaseAdmin.from("journal_views").insert({
+      journal_id: journalId,
+      referrer: h.get("referer") ?? null,
+      country: h.get("x-vercel-ip-country") ?? null,
+      city: h.get("x-vercel-ip-city") ?? null,
+      user_agent: h.get("user-agent") ?? null,
+    });
+  } catch (err) {
+    console.warn("Failed to record journal view:", err);
+  }
 }
 
 function buildDateDisplay(start: string | null, end: string | null): string {
@@ -151,6 +205,11 @@ export default async function PublicJournalPage({ params }: PageParams) {
   const { slug } = await params;
   const journal = await getPublicJournal(slug);
   if (!journal) notFound();
+
+  // Tracking is fire-and-forget but awaited here to keep the visit row's
+  // server-side execution scoped to this request — a Vercel function may
+  // freeze immediately after the response is returned.
+  await trackView(journal.id, journal.ownerId);
 
   return (
     <PublicJournalView

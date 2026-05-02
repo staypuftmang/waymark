@@ -35,6 +35,10 @@ interface JournalCardProps {
   onDelete: (j: JournalSummary) => void;
   onToast?: (msg: string) => void;
   onShareChanged?: () => void;
+  /** Total view count for this journal (only meaningful when isPublic).
+   * Undefined while the dashboard is still fetching. */
+  viewCount?: number;
+  onShowStats?: (j: JournalSummary) => void;
 }
 
 export default function JournalCard({
@@ -45,6 +49,8 @@ export default function JournalCard({
   onDelete,
   onToast,
   onShareChanged,
+  viewCount,
+  onShowStats,
 }: JournalCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -270,6 +276,27 @@ export default function JournalCard({
         <div className="text-stone" style={{ fontSize: 12, marginTop: 4, textTransform: "capitalize" }}>
           {modeLabel} &middot; {styleLabel} &middot; {layoutLabel}
         </div>
+        {isPublic && viewCount !== undefined && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onShowStats?.(journal); }}
+            className="bg-transparent border-none cursor-pointer text-stone font-body"
+            style={{
+              padding: 0,
+              marginTop: 2,
+              fontSize: 12,
+              color: "var(--color-stone)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              lineHeight: 1.4,
+            }}
+            title="View stats"
+            aria-label={`${viewCount} views — open stats`}
+          >
+            <span aria-hidden>{"\u{1F441}"}</span>
+            <span>{viewCount.toLocaleString()} {viewCount === 1 ? "view" : "views"}</span>
+          </button>
+        )}
         <div
           className="text-stone"
           style={{

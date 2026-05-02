@@ -442,6 +442,93 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
   return summaries;
 }
 
+// ── Public-journal view analytics ──────────────────────────────────────────
+
+export interface JournalViewStats {
+  total: number;
+  lastWeek: number;
+  topReferrers: Array<{ host: string; count: number }>;
+  topCountries: Array<{ country: string; count: number }>;
+}
+
+/**
+ * Total view count per public journal owned by the calling user.
+ * Backed by the get_my_journal_view_counts() RPC, which is SECURITY
+ * DEFINER and gates on auth.uid() so the dashboard never pulls raw view
+ * rows for a journal it doesn't own.
+ */
+export async function getJournalViewCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc("get_my_journal_view_counts");
+  if (error) {
+    console.warn("Failed to fetch journal view counts:", error);
+    return {};
+  }
+  const map: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{ journal_id: string; view_count: number | string }>) {
+    map[row.journal_id] = Number(row.view_count) || 0;
+  }
+  return map;
+}
+
+function extractHost(referrer: string | null): string {
+  if (!referrer) return "direct";
+  try {
+    const u = new URL(referrer);
+    return u.hostname || "direct";
+  } catch {
+    return "direct";
+  }
+}
+
+const STATS_FETCH_LIMIT = 5000;
+
+/**
+ * Aggregated stats for a single journal: total views, views in the last
+ * 7 days, top 5 referrer hosts, top 5 countries. RLS gates the read on
+ * the owner; passing a journalId not owned by the caller returns zeros.
+ *
+ * For volumes above STATS_FETCH_LIMIT this only summarises the most
+ * recent rows — fine for the personal-dashboard scale this app targets.
+ */
+export async function getJournalStats(journalId: string): Promise<JournalViewStats> {
+  const empty: JournalViewStats = { total: 0, lastWeek: 0, topReferrers: [], topCountries: [] };
+  const { data, error } = await supabase
+    .from("journal_views")
+    .select("viewed_at, referrer, country")
+    .eq("journal_id", journalId)
+    .order("viewed_at", { ascending: false })
+    .limit(STATS_FETCH_LIMIT)
+    .returns<Array<{ viewed_at: string; referrer: string | null; country: string | null }>>();
+  if (error) {
+    console.warn("Failed to fetch journal stats:", error);
+    return empty;
+  }
+  const rows = data ?? [];
+  if (rows.length === 0) return empty;
+
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const referrerCounts = new Map<string, number>();
+  const countryCounts = new Map<string, number>();
+  let lastWeek = 0;
+  for (const r of rows) {
+    if (new Date(r.viewed_at).getTime() >= weekAgo) lastWeek++;
+    const host = extractHost(r.referrer);
+    referrerCounts.set(host, (referrerCounts.get(host) ?? 0) + 1);
+    const c = r.country?.trim() || "Unknown";
+    countryCounts.set(c, (countryCounts.get(c) ?? 0) + 1);
+  }
+  const top = (m: Map<string, number>) =>
+    [...m.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  return {
+    total: rows.length,
+    lastWeek,
+    topReferrers: top(referrerCounts).map(([host, count]) => ({ host, count })),
+    topCountries: top(countryCounts).map(([country, count]) => ({ country, count })),
+  };
+}
+
 export async function deleteJournal(userId: string, journalId: string): Promise<void> {
   const { error } = await supabase
     .from("journals")

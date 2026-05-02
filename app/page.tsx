@@ -36,6 +36,12 @@ const AuthModal = dynamic(() => import("@/app/components/AuthModal"), {
   ssr: false,
   loading: () => null,
 });
+// JournalStatsModal is only mounted when the user clicks the view-count
+// chip on a public journal card.
+const JournalStatsModal = dynamic(() => import("@/app/components/JournalStatsModal"), {
+  ssr: false,
+  loading: () => null,
+});
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
 import AiButton from "@/app/components/AiButton";
@@ -47,6 +53,7 @@ import {
   deleteJournal as deleteJournalRemote,
   duplicateJournal as duplicateJournalRemote,
   renameJournal as renameJournalRemote,
+  getJournalViewCounts,
   type JournalSummary,
 } from "@/app/lib/journalStorage";
 
@@ -324,6 +331,10 @@ function PageInner() {
   const [journalsLoaded, setJournalsLoaded] = useState(false);
   const [deleteJournalConfirm, setDeleteJournalConfirm] = useState<JournalSummary | null>(null);
   const [newJournalPickerOpen, setNewJournalPickerOpen] = useState(false);
+  // clientId → total view count, populated alongside refreshJournals for
+  // public journals only. Empty {} when the user has no public journals.
+  const [viewCounts, setViewCounts] = useState<Record<string, number>>({});
+  const [statsJournal, setStatsJournal] = useState<JournalSummary | null>(null);
 
   // Rate limit UI state
   const [rateLimitModal, setRateLimitModal] = useState<RateLimitErrorInfo | null>(null);
@@ -389,12 +400,24 @@ function PageInner() {
     if (!user) {
       setJournals([]);
       setJournalsLoaded(false);
+      setViewCounts({});
       return;
     }
     try {
       const list = await listJournalsRemote(user.id);
       setJournals(list);
       setJournalsLoaded(true);
+      // Fetch view counts in parallel — failures here are non-fatal,
+      // the dashboard just renders cards without the chip.
+      const hasPublic = list.some((j) => j.isPublic);
+      if (hasPublic) {
+        getJournalViewCounts().then(setViewCounts).catch((err) => {
+          console.warn("View counts unavailable:", err);
+          setViewCounts({});
+        });
+      } else {
+        setViewCounts({});
+      }
     } catch (err) {
       console.error("Failed to list journals:", err);
       setJournalsLoaded(true);
@@ -1087,6 +1110,15 @@ function PageInner() {
         </div>
       )}
 
+      {/* ═══════════════ JOURNAL STATS MODAL ═══════════════ */}
+      {statsJournal && (
+        <JournalStatsModal
+          journalId={statsJournal.id}
+          journalTitle={statsJournal.title}
+          onClose={() => setStatsJournal(null)}
+        />
+      )}
+
       {/* ═══════════════ DELETE JOURNAL CONFIRM ═══════════════ */}
       {deleteJournalConfirm && (
         <ConfirmModal
@@ -1298,6 +1330,8 @@ function PageInner() {
                     onDelete={(jj) => setDeleteJournalConfirm(jj)}
                     onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }}
                     onShareChanged={refreshJournals}
+                    viewCount={j.isPublic ? (viewCounts[j.id] ?? 0) : undefined}
+                    onShowStats={(jj) => setStatsJournal(jj)}
                   />
                 ))}
                 {/* + New Journal card */}
