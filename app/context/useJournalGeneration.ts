@@ -1,0 +1,248 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { track } from "@vercel/analytics";
+import { useJournal } from "./JournalContext";
+import { aiCall } from "@/app/lib/ai";
+import { batchRewritePrompt, quickCreatePrompt } from "@/app/lib/prompts";
+import { cleanJson, formatDate } from "@/app/lib/constants";
+
+export interface GenerationResult {
+  generated: number;
+  cancelled: boolean;
+}
+
+export interface JournalGenerationApi {
+  /** Run AI on every photo that has no AI content yet. Used for fresh
+   * journal creation and for "Update Journal" with newly added photos. */
+  generateMissingAi: (mode: "quick" | "full") => Promise<GenerationResult>;
+  /** Re-run AI over every photo with content using current ws/len. Used by
+   * the regenerate-on-settings-change confirmation. */
+  regenerateAllAi: (mode: "quick" | "full") => Promise<GenerationResult>;
+  /** Request the in-flight generation loop to stop after the current
+   * photo's request resolves. */
+  cancel: () => void;
+  /** Whether the cancel button should be disabled (cooldown after click). */
+  cancelDisabled: boolean;
+  /** Formatted "May 1, 2026 — May 14, 2026" date range used in prompts
+   * and in the cover hero. Computed from context dates. */
+  dateDisplay: string;
+  /** True when ws/len differ from the snapshot taken at last generation. */
+  settingsChangedSinceGeneration: boolean;
+  /** True when any photo already has AI content. */
+  hasAnyAi: boolean;
+}
+
+/**
+ * Hook that orchestrates AI generation against the journal context.
+ *
+ * The two flows (`generateMissingAi`, `regenerateAllAi`) are nearly
+ * identical loops over photos with different prompt builders and target
+ * filters; both write back via `dispatch` and bump the generation
+ * snapshot on success.
+ */
+export function useJournalGeneration(): JournalGenerationApi {
+  const { state, dispatch } = useJournal();
+
+  // Cancel handshake: click sets the ref; the loop re-checks it before each
+  // iteration and after each await. The disabled flag debounces clicks so
+  // a double-tap doesn't immediately re-arm a fresh loop.
+  const cancelRef = useRef(false);
+  const [cancelDisabled, setCancelDisabled] = useState(false);
+
+  const cancel = useCallback(() => {
+    if (cancelDisabled) return;
+    cancelRef.current = true;
+    setCancelDisabled(true);
+    setTimeout(() => setCancelDisabled(false), 800);
+  }, [cancelDisabled]);
+
+  const dateDisplay = state.startDate
+    ? state.endDate
+      ? `${formatDate(state.startDate)} — ${formatDate(state.endDate)}`
+      : formatDate(state.startDate)
+    : "";
+
+  const hasAnyAi = state.photos.some(
+    (p) => p.aiCaption || p.aiNotes || p.aiParagraph,
+  );
+
+  const settingsChangedSinceGeneration =
+    hasAnyAi &&
+    state.genWs !== null &&
+    state.genLen !== null &&
+    (state.ws !== state.genWs || state.len !== state.genLen);
+
+  const generateMissingAi = useCallback(
+    async (mode: "quick" | "full"): Promise<GenerationResult> => {
+      const { photos, ws, vk, len, tripTitle, tripBrief, currentJournalId } = state;
+      const missing = photos.filter(
+        (p) => !(p.aiCaption || p.aiNotes || p.aiParagraph),
+      );
+      if (missing.length === 0) return { generated: 0, cancelled: false };
+
+      cancelRef.current = false;
+      dispatch({ type: "SET_QUICK_GENERATING", value: true });
+      dispatch({ type: "SET_GEN_PROGRESS", value: { current: 0, total: missing.length } });
+      track("ai_generated", {
+        mode,
+        photoCount: missing.length,
+        wordStyle: ws,
+        visualStyle: vk,
+      });
+
+      const previousCaptions: string[] = photos
+        .map((p) => p.aiCaption)
+        .filter((c): c is string => !!c);
+
+      const isFreshJournal = !hasAnyAi;
+      let firstCallSent = false;
+      let processed = 0;
+
+      for (let i = 0; i < missing.length; i++) {
+        if (cancelRef.current) break;
+        dispatch({
+          type: "SET_GEN_PROGRESS",
+          value: { current: i + 1, total: missing.length },
+        });
+        const p = missing[i];
+        const fullIdx = photos.findIndex((ph) => ph.id === p.id);
+        const prompt = quickCreatePrompt(
+          ws,
+          tripTitle,
+          tripBrief,
+          dateDisplay,
+          fullIdx >= 0 ? fullIdx : i,
+          photos.length,
+          previousCaptions,
+          len,
+        );
+        let opts: Parameters<typeof aiCall>[2];
+        if (isFreshJournal) {
+          opts = firstCallSent
+            ? { actionType: "rewrite_batch_photo", journalId: currentJournalId, record: false }
+            : { actionType: "journal_created", journalId: currentJournalId };
+          firstCallSent = true;
+        } else {
+          opts = { actionType: "rewrite_batch_photo", journalId: currentJournalId };
+        }
+        const raw = await aiCall(prompt, p.src, opts);
+        if (cancelRef.current) break;
+        if (raw) {
+          try {
+            const obj = JSON.parse(cleanJson(raw));
+            if (obj.caption) {
+              dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiCaption", value: obj.caption });
+              previousCaptions.push(obj.caption);
+            }
+            if (obj.notes) {
+              dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiNotes", value: obj.notes });
+            }
+            if (obj.paragraph) {
+              dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiParagraph", value: obj.paragraph });
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        processed++;
+      }
+
+      const cancelled = cancelRef.current;
+      cancelRef.current = false;
+      dispatch({ type: "SET_QUICK_GENERATING", value: false });
+      dispatch({ type: "SET_GEN_PROGRESS", value: null });
+      if (processed > 0 && !cancelled) {
+        dispatch({ type: "SET_GEN_SNAPSHOT", ws, len });
+      }
+      return { generated: processed, cancelled };
+    },
+    [state, dispatch, dateDisplay, hasAnyAi],
+  );
+
+  const regenerateAllAi = useCallback(
+    async (mode: "quick" | "full"): Promise<GenerationResult> => {
+      const { photos, ws, vk, len, tripTitle, tripBrief, currentJournalId } = state;
+      const targets = photos.filter(
+        (p) => p.aiCaption || p.aiNotes || p.aiParagraph || p.caption || p.notes,
+      );
+      if (targets.length === 0) return { generated: 0, cancelled: false };
+
+      cancelRef.current = false;
+      dispatch({ type: "SET_QUICK_GENERATING", value: true });
+      dispatch({ type: "SET_GEN_PROGRESS", value: { current: 0, total: targets.length } });
+      track("ai_generated", {
+        mode: `${mode}_regenerate`,
+        photoCount: targets.length,
+        wordStyle: ws,
+        visualStyle: vk,
+      });
+
+      const previousOutputs: string[] = [];
+      let processed = 0;
+
+      for (let i = 0; i < targets.length; i++) {
+        if (cancelRef.current) break;
+        dispatch({
+          type: "SET_GEN_PROGRESS",
+          value: { current: i + 1, total: targets.length },
+        });
+        const p = targets[i];
+        const capText = p.aiCaption || p.caption;
+        const notesText = p.aiNotes || p.notes;
+        const prompt = batchRewritePrompt(
+          ws,
+          tripTitle,
+          tripBrief,
+          dateDisplay,
+          capText,
+          notesText,
+          previousOutputs,
+          len,
+        );
+        const raw = await aiCall(prompt, p.src, {
+          actionType: "rewrite_batch_photo",
+          journalId: currentJournalId,
+        });
+        if (cancelRef.current) break;
+        if (raw) {
+          try {
+            const obj = JSON.parse(cleanJson(raw));
+            if (obj.caption) {
+              dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiCaption", value: obj.caption });
+              previousOutputs.push(obj.caption);
+            }
+            // Brief asks for empty notes — clear any prior pull quote.
+            dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiNotes", value: obj.notes ?? "" });
+            if (obj.paragraph) {
+              dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiParagraph", value: obj.paragraph });
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        processed++;
+      }
+
+      const cancelled = cancelRef.current;
+      cancelRef.current = false;
+      dispatch({ type: "SET_QUICK_GENERATING", value: false });
+      dispatch({ type: "SET_GEN_PROGRESS", value: null });
+      if (processed > 0 && !cancelled) {
+        dispatch({ type: "SET_GEN_SNAPSHOT", ws, len });
+      }
+      return { generated: processed, cancelled };
+    },
+    [state, dispatch, dateDisplay],
+  );
+
+  return {
+    generateMissingAi,
+    regenerateAllAi,
+    cancel,
+    cancelDisabled,
+    dateDisplay,
+    settingsChangedSinceGeneration,
+    hasAnyAi,
+  };
+}
