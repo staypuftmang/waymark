@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { track } from "@vercel/analytics";
-import { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
-import { VS, LO } from "@/app/lib/constants";
+import { VisualStyleKey, LayoutKey } from "@/app/lib/types";
+import { VS, LO, formatDate } from "@/app/lib/constants";
 import { LayoutMap } from "./layouts";
 import HeaderAuthControls from "./HeaderAuthControls";
 import SharePanel from "./SharePanel";
 import { useAuth } from "@/app/lib/AuthContext";
+import { useJournal } from "@/app/context/JournalContext";
 
 // Heavy modules — only loaded on user interaction.
 // RefinePanel is a sizeable editor sidebar; Lightbox is only mounted when a
@@ -18,57 +19,55 @@ const RefinePanel = dynamic(() => import("./RefinePanel"), { ssr: false, loading
 const Lightbox = dynamic(() => import("./Lightbox"), { ssr: false, loading: () => null });
 
 interface JournalPreviewProps {
-  tripTitle: string;
-  tripBrief: string;
-  dateDisplay: string;
-  photos: Photo[];
-  visualStyleKey: VisualStyleKey;
-  layoutKey: LayoutKey;
-  length?: LengthKey;
+  /** Page-level navigation callbacks — pencil-back to editor, logo-back home. */
   onEdit: () => void;
   onLogoClick: () => void;
-  setVisualStyleKey: (k: VisualStyleKey) => void;
-  setLayoutKey: (k: LayoutKey) => void;
-  coverPhotoId: number | null;
-  coverTitle: string;
-  coverSubtitle: string;
+  /** Auth modal triggers (page owns the modals). */
   onSignInClick?: () => void;
   onSignUpClick?: () => void;
   onYourJournals?: () => void;
+  /** Rate-limit status (lives at page level via rateStatus). */
   rateRemainingToday?: number | null;
-  journalId?: string | null;
-  shareSlug?: string | null;
-  isPublic?: boolean;
-  onShareChange?: (slug: string | null, isPublic: boolean) => void;
+  /** Toast surfacer (lives at page level). */
   onToast?: (msg: string) => void;
 }
 
 export default function JournalPreview({
-  tripTitle,
-  tripBrief,
-  dateDisplay,
-  photos,
-  visualStyleKey: vk,
-  layoutKey: lo,
-  length: len = "standard",
   onEdit,
   onLogoClick,
-  setVisualStyleKey: setVkProp,
-  setLayoutKey: setLoProp,
-  coverPhotoId,
-  coverTitle,
-  coverSubtitle,
   onSignInClick,
   onSignUpClick,
   onYourJournals,
   rateRemainingToday,
-  journalId,
-  shareSlug,
-  isPublic,
-  onShareChange,
   onToast,
 }: JournalPreviewProps) {
   const { user } = useAuth();
+  const { state, dispatch } = useJournal();
+  const {
+    photos,
+    tripTitle,
+    tripBrief,
+    coverPhotoId,
+    coverTitle,
+    coverSubtitle,
+    vk,
+    lo,
+    len,
+    startDate,
+    endDate,
+    currentJournalId: journalId,
+    shareSlug,
+    isPublic,
+  } = state;
+  const dateDisplay = startDate
+    ? endDate
+      ? `${formatDate(startDate)} — ${formatDate(endDate)}`
+      : formatDate(startDate)
+    : "";
+  const setVkProp = (k: VisualStyleKey) => dispatch({ type: "SET_VK", value: k });
+  const setLoProp = (k: LayoutKey) => dispatch({ type: "SET_LO", value: k });
+  const onShareChange = (slug: string | null, isPub: boolean) =>
+    dispatch({ type: "SET_SHARE", slug, isPublic: isPub });
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
   const coverPhoto = coverPhotoId !== null ? photos.find((p) => p.id === coverPhotoId) : null;

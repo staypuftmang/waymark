@@ -2167,28 +2167,12 @@ function PageInner() {
       {/* ═══════════════ JOURNAL PREVIEW ═══════════════ */}
       {step === 99 && (
         <JournalPreview
-          tripTitle={tripTitle}
-          tripBrief={tripBrief}
-          dateDisplay={dateDisplay}
-          photos={photos}
-          visualStyleKey={vk}
-          layoutKey={lo}
-          length={len}
           onEdit={() => setStep(mode === "quick" ? 10 : 2)}
           onLogoClick={reset}
-          setVisualStyleKey={setVk}
-          setLayoutKey={setLo}
-          coverPhotoId={coverPhotoId}
-          coverTitle={coverTitle}
-          coverSubtitle={coverSubtitle}
           onSignInClick={openSignIn}
           onSignUpClick={openSignUp}
           onYourJournals={reset}
           rateRemainingToday={user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" ? rateStatus.dailyRemaining : null}
-          journalId={currentJournalId}
-          shareSlug={shareSlug}
-          isPublic={isPublic}
-          onShareChange={(slug, isPub) => setShare(slug, isPub)}
           onToast={(msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }}
         />
       )}
