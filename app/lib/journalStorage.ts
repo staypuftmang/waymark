@@ -90,7 +90,7 @@ interface JournalPhotoRow {
   photo_order: number;
 }
 
-function journalToFields(d: JournalData) {
+export function journalToFields(d: JournalData) {
   return {
     title: d.tripTitle,
     mode: d.mode,

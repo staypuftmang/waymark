@@ -149,7 +149,7 @@ export type JournalAction =
   | { type: "LOAD_FROM_REMOTE"; data: JournalData; journalId: string; nextStep: number }
   | { type: "RESET" };
 
-function reducer(state: JournalState, action: JournalAction): JournalState {
+export function reducer(state: JournalState, action: JournalAction): JournalState {
   switch (action.type) {
     case "SET_MODE":
       return { ...state, mode: action.mode };
