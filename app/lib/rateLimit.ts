@@ -173,12 +173,14 @@ export async function recordUsage(
   userId: string,
   actionType: ActionType,
   journalId: string | null,
+  provider: "anthropic" | "google" = "anthropic",
 ): Promise<void> {
   try {
     await supabaseAdmin.from("ai_usage").insert({
       user_id: userId,
       action_type: actionType,
       journal_id: journalId,
+      provider,
     });
   } catch (e) {
     console.error("Failed to record AI usage:", errMsg(e));

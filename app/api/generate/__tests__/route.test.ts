@@ -17,6 +17,10 @@ const mocks = vi.hoisted(() => {
     checkJournalRewriteLimit: vi.fn(),
     recordUsage: vi.fn(),
     maybeCleanup: vi.fn(),
+    // Provider fallback
+    geminiCall: vi.fn(),
+    recordProviderSuccess: vi.fn(),
+    recordProviderFailure: vi.fn(),
   };
 });
 
@@ -42,6 +46,16 @@ vi.mock("@/app/lib/rateLimit", () => ({
   maybeCleanup: mocks.maybeCleanup,
   HOURLY_LIMIT: 50,
   DAILY_LIMIT: 200,
+}));
+
+vi.mock("@/app/lib/providers/gemini", () => ({
+  geminiCall: mocks.geminiCall,
+  GEMINI_MODEL: "gemini-2.0-flash",
+}));
+
+vi.mock("@/app/lib/providers/state", () => ({
+  recordProviderSuccess: mocks.recordProviderSuccess,
+  recordProviderFailure: mocks.recordProviderFailure,
 }));
 
 // Now import the route under test.
@@ -88,6 +102,10 @@ function defaultRateLimitMocks(userId = "user-1") {
   mocks.messagesCreate.mockResolvedValue({
     content: [{ type: "text", text: "AI output" }],
   });
+  // Default Gemini mock — used by tests that exercise the Anthropic →
+  // Gemini fallback. Tests that want both providers to fail override
+  // this with mockRejectedValue.
+  mocks.geminiCall.mockResolvedValue("Gemini output");
 }
 
 beforeEach(() => {
@@ -112,7 +130,7 @@ describe("POST /api/generate — auth header", () => {
     expect(res.status).toBe(200);
     expect(mocks.getUser).toHaveBeenCalledWith("token-xyz");
     // recordUsage should be called with the resolved user id
-    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", null);
+    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", null, "anthropic");
   });
 
   it("treats requests without a Bearer token as anonymous (IP rate limit path)", async () => {
@@ -248,7 +266,7 @@ describe("POST /api/generate — action types", () => {
       const req = makeRequest({ prompt: "hi", actionType: action }, authHeaders());
       const res = await POST(req);
       expect(res.status).toBe(200);
-      expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", action, null);
+      expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", action, null, "anthropic");
     });
   }
 
@@ -259,7 +277,7 @@ describe("POST /api/generate — action types", () => {
     );
     const res = await POST(req);
     expect(res.status).toBe(200);
-    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", null);
+    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", null, "anthropic");
   });
 
   it("does NOT record usage when record:false is passed", async () => {
@@ -279,7 +297,7 @@ describe("POST /api/generate — action types", () => {
     );
     const res = await POST(req);
     expect(res.status).toBe(200);
-    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", "j-42");
+    expect(mocks.recordUsage).toHaveBeenCalledWith("user-1", "rewrite_single", "j-42", "anthropic");
   });
 });
 
@@ -320,9 +338,63 @@ describe("POST /api/generate — Anthropic interaction", () => {
     expect(body.fallback).toBe(true);
   });
 
-  it("returns 500 with a generic error when Anthropic fails non-recoverably", async () => {
+  it("falls back to Gemini when Anthropic 5xx and tags response with provider=google", async () => {
     mocks.messagesCreate.mockRejectedValue(
       Object.assign(new Error("internal"), { status: 500 }),
+    );
+    mocks.geminiCall.mockResolvedValue("From Gemini");
+    const req = makeRequest(
+      { prompt: "x", actionType: "rewrite_single" },
+      authHeaders(),
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-provider")).toBe("google");
+    const body = await res.json();
+    expect(body.text).toBe("From Gemini");
+    expect(body.provider).toBe("google");
+    expect(body.model).toBe("gemini-2.0-flash");
+    expect(body.fallback).toBe(true);
+    // Anthropic was marked degraded, with Gemini as the rescuer.
+    expect(mocks.recordProviderFailure).toHaveBeenCalledWith(
+      "anthropic", expect.any(String), "google",
+    );
+    // Usage row should attribute the call to google.
+    expect(mocks.recordUsage).toHaveBeenCalledWith(
+      "user-1", "rewrite_single", null, "google",
+    );
+  });
+
+  it("returns 503 ai_unavailable when both Anthropic AND Gemini fail", async () => {
+    mocks.messagesCreate.mockRejectedValue(
+      Object.assign(new Error("internal"), { status: 500 }),
+    );
+    mocks.geminiCall.mockRejectedValue(new Error("Gemini exploded"));
+    const req = makeRequest(
+      { prompt: "x", actionType: "rewrite_single" },
+      authHeaders(),
+    );
+    const res = await POST(req);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBe("ai_unavailable");
+    expect(body.message).toMatch(/temporarily unavailable/i);
+    // No usage row should be recorded when no provider served the request.
+    expect(mocks.recordUsage).not.toHaveBeenCalled();
+    // Both providers should be marked degraded with no rescuer.
+    expect(mocks.recordProviderFailure).toHaveBeenCalledWith(
+      "anthropic", expect.any(String), null,
+    );
+    expect(mocks.recordProviderFailure).toHaveBeenCalledWith(
+      "google", expect.any(String), null,
+    );
+  });
+
+  it("does NOT fall back to Gemini on a 4xx Anthropic error", async () => {
+    // 400-class errors mean the request shape is wrong — Gemini would
+    // reproduce the same failure. Surface the legacy 500 instead.
+    mocks.messagesCreate.mockRejectedValue(
+      Object.assign(new Error("bad request"), { status: 400 }),
     );
     const req = makeRequest(
       { prompt: "x", actionType: "rewrite_single" },
@@ -330,22 +402,17 @@ describe("POST /api/generate — Anthropic interaction", () => {
     );
     const res = await POST(req);
     expect(res.status).toBe(500);
-    const body = await res.json();
-    // New standardized error shape — code in `error`, human text in `message`.
-    expect(body.error).toBe("generation_failed");
-    expect(body.message).toBe("Generation failed");
+    expect(mocks.geminiCall).not.toHaveBeenCalled();
+    expect(mocks.recordUsage).not.toHaveBeenCalled();
   });
 
-  it("does NOT record usage if the Anthropic call fails", async () => {
-    mocks.messagesCreate.mockRejectedValue(
-      Object.assign(new Error("internal"), { status: 500 }),
-    );
+  it("records provider success on a healthy Anthropic call (closes the recovery loop)", async () => {
     const req = makeRequest(
       { prompt: "x", actionType: "rewrite_single" },
       authHeaders(),
     );
     await POST(req);
-    expect(mocks.recordUsage).not.toHaveBeenCalled();
+    expect(mocks.recordProviderSuccess).toHaveBeenCalledWith("anthropic");
   });
 
   it("filters non-text content blocks from the response", async () => {

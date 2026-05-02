@@ -11,11 +11,33 @@ import {
 } from "@/app/lib/rateLimit";
 import { apiError, parseBody, withAuth, z } from "@/app/lib/api";
 import { acquireSlot, releaseSlot } from "@/app/lib/concurrency";
+import { geminiCall, GEMINI_MODEL } from "@/app/lib/providers/gemini";
+import { recordProviderFailure, recordProviderSuccess } from "@/app/lib/providers/state";
 
 const client = new Anthropic();
 
 const PRIMARY_MODEL = "claude-sonnet-4-20250514";
 const FALLBACK_MODEL = "claude-haiku-4-5-20251001";
+
+// Hard upper bound on a single Anthropic call. Beyond this we abandon the
+// in-flight request and try Gemini. Tunable; bumped above the 95th
+// percentile of healthy latency.
+const ANTHROPIC_TIMEOUT_MS = 30_000;
+
+function shouldFallbackToGemini(err: unknown): boolean {
+  // Treat as eligible for cross-provider fallback: explicit timeouts/aborts,
+  // 5xx, 429, and anything that doesn't carry a status code (network errors,
+  // DNS, SDK throws).
+  const e = err as { status?: number; name?: string };
+  if (e?.name === "AbortError") return true;
+  const s = e?.status;
+  if (typeof s === "number") {
+    if (s === 429) return true;
+    if (s >= 500 && s < 600) return true;
+    return false;
+  }
+  return true;
+}
 
 // ── IP-based rate limiter (signed-out fallback) ──
 interface RateLimitEntry {
@@ -235,12 +257,19 @@ export const POST = withAuth(
     const content = buildContent(prompt, image, Array.isArray(images) ? images : undefined);
 
     const runWith = async (model: string) => {
-      const message = await client.messages.create({
-        model, max_tokens: maxTokens, messages: [{ role: "user", content }],
-      });
-      return message.content
-        .filter((block): block is Anthropic.TextBlock => block.type === "text")
-        .map((b) => b.text).join("").trim();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ANTHROPIC_TIMEOUT_MS);
+      try {
+        const message = await client.messages.create(
+          { model, max_tokens: maxTokens, messages: [{ role: "user", content }] },
+          { signal: ctrl.signal },
+        );
+        return message.content
+          .filter((block): block is Anthropic.TextBlock => block.type === "text")
+          .map((b) => b.text).join("").trim();
+      } finally {
+        clearTimeout(timer);
+      }
     };
 
     // Build a usage-status payload for the client to update its UI without
@@ -276,30 +305,82 @@ export const POST = withAuth(
 
     try {
       let text = "";
-      let model = PRIMARY_MODEL;
+      let model: string = PRIMARY_MODEL;
+      let provider: "anthropic" | "google" = "anthropic";
       let fallback = false;
+      let anthropicError: unknown = null;
+
+      // Layer 1: Anthropic primary → Anthropic Haiku fallback (in-provider).
       try {
         text = await runWith(PRIMARY_MODEL);
       } catch (e: unknown) {
         const status = (e as { status?: number }).status;
         if (status === 529 || status === 429) {
           console.warn(`Primary model ${PRIMARY_MODEL} unavailable (${status}), falling back to ${FALLBACK_MODEL}`);
-          text = await runWith(FALLBACK_MODEL);
-          model = FALLBACK_MODEL;
-          fallback = true;
+          try {
+            text = await runWith(FALLBACK_MODEL);
+            model = FALLBACK_MODEL;
+            fallback = true;
+          } catch (e2) {
+            anthropicError = e2;
+          }
         } else {
-          throw e;
+          anthropicError = e;
         }
       }
 
+      // Layer 2: Anthropic-side failure → Gemini cross-provider fallback,
+      // gated on shouldFallbackToGemini so we don't escalate on, e.g., 4xx
+      // request-shape errors that Gemini would reproduce.
+      if (anthropicError && shouldFallbackToGemini(anthropicError)) {
+        const errMsg = anthropicError instanceof Error ? anthropicError.message : String(anthropicError);
+        console.warn(`Anthropic failed (${errMsg}); attempting Gemini fallback.`);
+        try {
+          text = await geminiCall({ prompt, image, images, maxTokens });
+          provider = "google";
+          model = GEMINI_MODEL;
+          fallback = true;
+          recordProviderFailure("anthropic", errMsg, "google");
+          anthropicError = null;
+        } catch (geminiErr) {
+          console.error(
+            "Both Anthropic and Gemini failed:",
+            geminiErr instanceof Error ? geminiErr.message : "unknown",
+          );
+          recordProviderFailure("anthropic", errMsg, null);
+          recordProviderFailure(
+            "google",
+            geminiErr instanceof Error ? geminiErr.message : "unknown",
+            null,
+          );
+          return apiError(503, "ai_unavailable",
+            "Our AI is temporarily unavailable. Please try again in a few minutes.",
+          );
+        }
+      } else if (anthropicError) {
+        // Non-fallback-eligible Anthropic error (e.g. 400 bad request).
+        // Surface as the legacy 500 so existing callers see the same shape.
+        throw anthropicError;
+      } else {
+        // Successful Anthropic call closes the recovery loop if Anthropic
+        // was previously marked degraded.
+        recordProviderSuccess("anthropic");
+      }
+
       if (userId && record) {
-        await recordUsage(userId, actionType, journalId);
+        await recordUsage(userId, actionType, journalId, provider);
       } else if (!userId) {
         recordIpUsage(getClientIp(req));
       }
 
       const rate_limit = await buildResponseMeta();
-      return Response.json({ text, model, ...(fallback ? { fallback: true } : {}), rate_limit });
+      return Response.json({
+        text,
+        model,
+        provider,
+        ...(fallback ? { fallback: true } : {}),
+        rate_limit,
+      }, { headers: { "X-Provider": provider } });
     } catch (e) {
       console.error("API generate error:", e instanceof Error ? e.message : "unknown");
       return apiError(500, "generation_failed", "Generation failed");

@@ -35,6 +35,10 @@ export interface RateLimitStatus {
 export interface AiResult {
   text: string;
   fallback?: boolean;
+  /** Which upstream LLM served the request — "anthropic" or "google". */
+  provider?: "anthropic" | "google";
+  /** Specific model id (e.g. claude-sonnet-4-20250514, gemini-2.0-flash). */
+  model?: string;
   error?: string;
   reason?: string;
   message?: string;
@@ -167,6 +171,9 @@ export async function aiCall(
       const d: AiResult = await r.json();
       if (d.fallback && onFallbackUsed) onFallbackUsed();
       if (d.rate_limit && onRateStatus) onRateStatus(d.rate_limit);
+      if (d.provider && d.provider !== "anthropic") {
+        console.info(`AI served by ${d.provider} (${d.model ?? "unknown model"})`);
+      }
       return d.text || "";
     } catch (e) {
       console.warn(`AI call error (attempt ${attempt + 1}):`, e);
