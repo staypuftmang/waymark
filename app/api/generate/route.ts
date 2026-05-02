@@ -92,10 +92,19 @@ function getClientIp(req: Request): string {
 
 type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } };
+  | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+  | { type: "image"; source: { type: "url"; url: string } };
 
 function pushImageBlock(content: ContentBlock[], image: string): void {
-  if (!image || !image.startsWith("data:")) return;
+  if (!image) return;
+  // Storage-backed photos arrive as signed Supabase URLs after the
+  // base64 → Storage migration. Anthropic's vision API supports a `url`
+  // image source, so we forward the URL and let Anthropic fetch it.
+  if (image.startsWith("http://") || image.startsWith("https://")) {
+    content.push({ type: "image", source: { type: "url", url: image } });
+    return;
+  }
+  if (!image.startsWith("data:")) return;
   const commaIdx = image.indexOf(",");
   const header = image.slice(0, commaIdx);
   const data = image.slice(commaIdx + 1);
