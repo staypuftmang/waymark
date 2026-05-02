@@ -5,6 +5,7 @@ import { track } from "@vercel/analytics";
 import { useAuth } from "@/app/lib/AuthContext";
 import { supabase } from "@/app/lib/supabase";
 import { FEEDBACK_OPEN_EVENT } from "./feedbackBus";
+import { Pill, PillGroup } from "./ui";
 
 // Re-export so any older callers that did `import { openFeedback } from
 // "./FeedbackWidget"` keep working without dragging the heavy widget into
@@ -352,30 +353,14 @@ export default function FeedbackWidget() {
                   Send feedback
                 </div>
 
-                <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 14 }}>
-                  {CATEGORIES.map(({ key, label }) => {
-                    const selected = category === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setCategory(key)}
-                        className="cursor-pointer font-body"
-                        style={{
-                          padding: "5px 11px",
-                          borderRadius: 999,
-                          border: selected ? "1px solid var(--color-accent)" : "1px solid var(--color-border)",
-                          background: selected ? "var(--color-accent)" : "transparent",
-                          color: selected ? "#fff" : "var(--color-ink)",
-                          fontSize: 12,
-                          fontWeight: selected ? 600 : 500,
-                          transition: "background 0.15s, color 0.15s, border-color 0.15s",
-                        }}
-                      >
+                <div style={{ marginBottom: 14 }}>
+                  <PillGroup gap={6} marginTop={0}>
+                    {CATEGORIES.map(({ key, label }) => (
+                      <Pill key={key} selected={category === key} onClick={() => setCategory(key)}>
                         {label}
-                      </button>
-                    );
-                  })}
+                      </Pill>
+                    ))}
+                  </PillGroup>
                 </div>
 
                 <textarea

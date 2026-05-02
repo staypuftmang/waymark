@@ -20,6 +20,7 @@ import StylePreview from "@/app/components/StylePreview";
 import RewriteAll from "@/app/components/RewriteAll";
 import JournalPreview from "@/app/components/JournalPreview";
 import HelperText from "@/app/components/HelperText";
+import { Button, ConfirmModal, Pill, PillGroup, DismissibleBanner } from "@/app/components/ui";
 import CoverEditor from "@/app/components/CoverEditor";
 // SortablePhotoList pulls in the three @dnd-kit packages — only loaded once
 // the editor needs them.
@@ -63,28 +64,6 @@ const iStyle: React.CSSProperties = {
   background: "var(--color-card)",
   outline: "none",
   color: "var(--color-ink)",
-};
-
-const btnPrimary: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "10px 20px",
-  border: "none",
-  borderRadius: 5,
-  fontSize: 13,
-  fontWeight: 600,
-  fontFamily: "var(--font-body)",
-  cursor: "pointer",
-  background: "var(--color-ink)",
-  color: "var(--color-paper)",
-};
-
-const btnSecondary: React.CSSProperties = {
-  ...btnPrimary,
-  background: "none",
-  color: "var(--color-ink)",
-  border: "1px solid var(--color-border)",
 };
 
 function formatResetIn(seconds: number): string {
@@ -1172,19 +1151,6 @@ export default function Page() {
   const dropStyleEffective: React.CSSProperties = atHardCap
     ? { ...dropStyle, opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }
     : dropStyle;
-  const chipClass = "wm-chip";
-  const chip = (sel: boolean): React.CSSProperties => ({
-    padding: "4px 10px",
-    borderRadius: 3,
-    border: sel ? "1.5px solid var(--color-accent)" : "1px solid var(--color-border)",
-    background: sel ? "rgba(154,52,18,.06)" : "var(--color-card)",
-    fontSize: 11,
-    fontWeight: sel ? 700 : 400,
-    cursor: "pointer",
-    fontFamily: "var(--font-body)",
-    color: "var(--color-ink)",
-  });
-
   if (!appReady) {
     return <div className="min-h-screen bg-paper" />;
   }
@@ -1281,16 +1247,13 @@ export default function Page() {
               </p>
               <div className="flex gap-3 justify-center">
                 {!m.signedIn && (
-                  <button
-                    onClick={() => { setRateLimitModal(null); openSignUp(); }}
-                    style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
-                  >
+                  <Button onClick={() => { setRateLimitModal(null); openSignUp(); }}>
                     Sign in
-                  </button>
+                  </Button>
                 )}
-                <button onClick={() => setRateLimitModal(null)} style={{ ...btnSecondary, fontSize: 13 }}>
+                <Button variant="secondary" onClick={() => setRateLimitModal(null)}>
                   Got it
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1367,57 +1330,31 @@ export default function Page() {
 
       {/* ═══════════════ DELETE JOURNAL CONFIRM ═══════════════ */}
       {deleteJournalConfirm && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 6, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Delete this journal?
-            </div>
-            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              <strong className="text-ink">{deleteJournalConfirm.title || "Untitled Journal"}</strong> will be permanently deleted. This cannot be undone.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setDeleteJournalConfirm(null)}
-                style={{ ...btnSecondary, fontSize: 13 }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteJournalConfirmed(deleteJournalConfirm)}
-                style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Delete this journal?"
+          body={
+            <>
+              <strong className="text-ink">{deleteJournalConfirm.title || "Untitled Journal"}</strong>{" "}
+              will be permanently deleted. This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => deleteJournalConfirmed(deleteJournalConfirm)}
+          onCancel={() => setDeleteJournalConfirm(null)}
+        />
       )}
 
       {briefReplaceConfirm !== null && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 6, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Replace your current brief?
-            </div>
-            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              The AI will write a new brief from your photos. Your current text will be replaced.
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button
-                onClick={() => setBriefReplaceConfirm(null)}
-                style={{ ...btnSecondary, fontSize: 13 }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setBriefReplaceConfirm(null); void runBriefGenerate(); }}
-                style={{ ...btnPrimary, fontSize: 13 }}
-              >
-                Replace
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Replace your current brief?"
+          body="The AI will write a new brief from your photos. Your current text will be replaced."
+          confirmLabel="Replace"
+          cancelLabel="Cancel"
+          onConfirm={() => { setBriefReplaceConfirm(null); void runBriefGenerate(); }}
+          onCancel={() => setBriefReplaceConfirm(null)}
+        />
       )}
 
       {/* ═══════════════ TOAST ═══════════════ */}
@@ -1513,60 +1450,41 @@ export default function Page() {
 
       {/* ═══════════════ RESUME PROMPT ═══════════════ */}
       {showResumePrompt && savedJournal && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 5, padding: "32px 28px", maxWidth: 400, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 24, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Welcome back
-            </div>
-            <p className="text-stone" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-              You have an unfinished journal: <strong className="text-ink">{savedJournal.tripTitle}</strong>
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={startFresh} style={{ ...btnSecondary, fontSize: 13 }}>Start Fresh</button>
-              <button onClick={resumeJournal} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Resume</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Welcome back"
+          body={
+            <>You have an unfinished journal: <strong className="text-ink">{savedJournal.tripTitle}</strong></>
+          }
+          confirmLabel="Resume"
+          cancelLabel="Start Fresh"
+          onConfirm={resumeJournal}
+          onCancel={startFresh}
+        />
       )}
 
       {/* ═══════════════ REGENERATE-WITH-NEW-SETTINGS DIALOG ═══════════════ */}
       {regenConfirm && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 420, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Rewrite your journal?
-            </div>
-            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              {`All text will be rewritten using ${WS[ws].label} voice and ${LE[len].label} length. Your photos and order won't change.`}
-            </p>
-            <div className="flex gap-3 justify-center flex-wrap">
-              <button onClick={regenConfirm.onKeepCurrent} style={{ ...btnSecondary, fontSize: 13 }}>
-                Keep current text
-              </button>
-              <button onClick={regenConfirm.onRegenerate} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>
-                Regenerate
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Rewrite your journal?"
+          body={`All text will be rewritten using ${WS[ws].label} voice and ${LE[len].label} length. Your photos and order won't change.`}
+          confirmLabel="Regenerate"
+          cancelLabel="Keep current text"
+          onConfirm={regenConfirm.onRegenerate}
+          onCancel={regenConfirm.onKeepCurrent}
+        />
       )}
 
-      {/* ═══════════════ CONFIRM DIALOG ═══════════════ */}
+      {/* ═══════════════ DISCARD CONFIRM ═══════════════ */}
       {confirmAction && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4" style={{ background: "rgba(26,24,21,.6)" }}>
-          <div className="bg-card" style={{ borderRadius: 5, padding: "28px 24px", maxWidth: 380, width: "100%", boxShadow: "0 16px 48px rgba(0,0,0,.2)", textAlign: "center" }}>
-            <div className="font-title" style={{ fontSize: 20, fontWeight: 300, color: "var(--color-ink)", marginBottom: 8 }}>
-              Discard journal?
-            </div>
-            <p className="text-stone" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-              This will discard your current journal. Are you sure?
-            </p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => setConfirmAction(null)} style={{ ...btnSecondary, fontSize: 13 }}>Cancel</button>
-              <button onClick={() => { confirmAction(); setConfirmAction(null); }} style={{ ...btnPrimary, background: "var(--color-accent)", color: "#fff", fontSize: 13 }}>Discard</button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title="Discard journal?"
+          body="This will discard your current journal. Are you sure?"
+          confirmLabel="Discard"
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => { confirmAction(); setConfirmAction(null); }}
+          onCancel={() => setConfirmAction(null)}
+        />
       )}
 
       {/* ═══════════════ LANDING ═══════════════ */}
@@ -1805,38 +1723,13 @@ export default function Page() {
                              />
               <HelperText>The more you write here, the more personal your journal will be. Write less and the AI fills in the gaps from what it sees in your photos. This also appears as the opening paragraph.</HelperText>
               {showBriefNudge && (
-                <div
-                  role="status"
-                  className="font-body text-stone flex items-start"
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                    gap: 8,
-                    opacity: 0.85,
-                  }}
+                <DismissibleBanner
+                  tone="stone"
+                  onDismiss={() => setBriefNudgeDismissed(true)}
+                  style={{ marginTop: 8 }}
                 >
-                  <span style={{ flex: 1 }}>
-                    {`Tip: With ${photoCount} photos and a short brief, the AI will create more of the story on its own. Add more detail for a more personal result, or use ✦ Describe my trip to auto-generate.`}
-                  </span>
-                  <button
-                    onClick={() => setBriefNudgeDismissed(true)}
-                    aria-label="Dismiss tip"
-                    className="cursor-pointer"
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "inherit",
-                      padding: 2,
-                      fontSize: 12,
-                      lineHeight: 1,
-                      opacity: 0.6,
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
+                  {`Tip: With ${photoCount} photos and a short brief, the AI will create more of the story on its own. Add more detail for a more personal result, or use ✦ Describe my trip to auto-generate.`}
+                </DismissibleBanner>
               )}
             </div>
 
@@ -1985,43 +1878,13 @@ export default function Page() {
                   />
                 </div>
                 {showSoftCapBanner && (
-                  <div
-                    role="status"
-                    className="font-body"
-                    style={{
-                      marginTop: 12,
-                      padding: "10px 12px",
-                      background: "rgba(196, 164, 90, 0.12)",
-                      border: "1px solid rgba(196, 164, 90, 0.4)",
-                      borderRadius: 4,
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      fontSize: 13,
-                      color: "#8B6914",
-                      lineHeight: 1.5,
-                    }}
+                  <DismissibleBanner
+                    tone="amber"
+                    onDismiss={() => setSoftCapDismissed(true)}
+                    style={{ marginTop: 12 }}
                   >
-                    <span style={{ flex: 1 }}>
-                      {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
-                    </span>
-                    <button
-                      onClick={() => setSoftCapDismissed(true)}
-                      aria-label="Dismiss"
-                      className="cursor-pointer"
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: "inherit",
-                        padding: 2,
-                        fontSize: 14,
-                        lineHeight: 1,
-                        opacity: 0.6,
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
+                    {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
+                  </DismissibleBanner>
                 )}
               </div>
             )}
@@ -2030,37 +1893,36 @@ export default function Page() {
               <div>
                 <label style={labelStyle}>Visual</label>
                 <HelperText>Sets the look — fonts, colors, and mood.</HelperText>
-                <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
+                <PillGroup>
                   {(Object.entries(VS) as [VisualStyleKey, typeof VS[VisualStyleKey]][]).map(([k, s]) => (
-                    <button key={k} className={chipClass} onClick={() => { setVk(k); track("style_selected", { style: k }); }} style={chip(vk === k)}>{s.label}</button>
+                    <Pill key={k} selected={vk === k} onClick={() => { setVk(k); track("style_selected", { style: k }); }}>
+                      {s.label}
+                    </Pill>
                   ))}
-                </div>
+                </PillGroup>
               </div>
               <div>
                 <label style={labelStyle}>Voice</label>
                 <HelperText>Sets the writing style the AI uses.</HelperText>
-                <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
+                <PillGroup>
                   {(Object.entries(WS) as [WordStyleKey, typeof WS[WordStyleKey]][]).map(([k, w]) => (
-                    <button key={k} className={chipClass} onClick={() => setWs(k)} style={chip(ws === k)}>{w.label}</button>
+                    <Pill key={k} selected={ws === k} onClick={() => setWs(k)}>
+                      {w.label}
+                    </Pill>
                   ))}
-                </div>
+                </PillGroup>
               </div>
             </div>
 
             <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Length</label>
             <HelperText>Controls how much the AI writes per photo.</HelperText>
-            <div className="flex gap-1 flex-wrap" style={{ marginTop: 6 }}>
+            <PillGroup>
               {(["brief", "standard", "detailed"] as LengthKey[]).map((k) => (
-                <button
-                  key={k}
-                  className={chipClass}
-                  onClick={() => { setLen(k); track("length_selected", { value: k }); }}
-                  style={chip(len === k)}
-                >
+                <Pill key={k} selected={len === k} onClick={() => { setLen(k); track("length_selected", { value: k }); }}>
                   {LE[k].label}
-                </button>
+                </Pill>
               ))}
-            </div>
+            </PillGroup>
 
             <label style={{ ...labelStyle, marginTop: 16, marginBottom: 4 }}>Layout</label>
             <HelperText>How your photos are arranged in the journal.</HelperText>
@@ -2093,17 +1955,12 @@ export default function Page() {
             </div>
 
             <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: ok && tripBrief.trim() && !quickGenerating ? 1 : 0.5,
-                  cursor: ok && tripBrief.trim() && !quickGenerating ? "pointer" : "not-allowed",
-                }}
+              <Button
                 disabled={!ok || !tripBrief.trim() || quickGenerating}
                 onClick={quickGenerate}
               >
                 {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
-              </button>
+              </Button>
               {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
                 <div className="text-stone font-body" style={{ fontSize: 13 }}>
                   {rateStatus.dailyRemaining} generation{rateStatus.dailyRemaining === 1 ? "" : "s"} remaining today.
@@ -2184,8 +2041,8 @@ export default function Page() {
 
             <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
               <div className="flex justify-between w-full">
-                <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
-                <button style={btnPrimary} onClick={() => setStep(99)}>View Journal &#x2192;</button>
+                <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
+                <Button onClick={() => setStep(99)}>View Journal →</Button>
               </div>
               {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
                 <div className="text-stone font-body" style={{ fontSize: 13 }}>
@@ -2285,18 +2142,10 @@ export default function Page() {
 
           <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
             <div className="flex justify-between w-full">
-              <button style={btnSecondary} onClick={reset}>&#x2190; Home</button>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: tripTitle.trim() ? 1 : 0.5,
-                  cursor: tripTitle.trim() ? "pointer" : "not-allowed",
-                }}
-                disabled={!tripTitle.trim()}
-                onClick={() => setStep(1)}
-              >
-                Photos &#x2192;
-              </button>
+              <Button variant="secondary" onClick={reset}>← Home</Button>
+              <Button disabled={!tripTitle.trim()} onClick={() => setStep(1)}>
+                Photos →
+              </Button>
             </div>
             {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
@@ -2356,44 +2205,13 @@ export default function Page() {
           )}
 
           {showSoftCapBanner && (
-            <div
-              role="status"
-              className="font-body"
-              style={{
-                marginTop: 4,
-                marginBottom: 12,
-                padding: "10px 12px",
-                background: "rgba(196, 164, 90, 0.12)",
-                border: "1px solid rgba(196, 164, 90, 0.4)",
-                borderRadius: 4,
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                fontSize: 13,
-                color: "#8B6914",
-                lineHeight: 1.5,
-              }}
+            <DismissibleBanner
+              tone="amber"
+              onDismiss={() => setSoftCapDismissed(true)}
+              style={{ marginTop: 4, marginBottom: 12 }}
             >
-              <span style={{ flex: 1 }}>
-                {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
-              </span>
-              <button
-                onClick={() => setSoftCapDismissed(true)}
-                aria-label="Dismiss"
-                className="cursor-pointer"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "inherit",
-                  padding: 2,
-                  fontSize: 14,
-                  lineHeight: 1,
-                  opacity: 0.6,
-                }}
-              >
-                ✕
-              </button>
-            </div>
+              {`It looks like you've got a story to tell! Heads up: this many will take a bit longer to generate.`}
+            </DismissibleBanner>
           )}
 
           <CoverEditor
@@ -2454,18 +2272,10 @@ export default function Page() {
 
           <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
             <div className="flex justify-between w-full">
-              <button style={btnSecondary} onClick={() => setStep(0)}>&#x2190; Back</button>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: photos.length > 0 ? 1 : 0.5,
-                  cursor: photos.length > 0 ? "pointer" : "not-allowed",
-                }}
-                disabled={photos.length === 0}
-                onClick={() => setStep(2)}
-              >
-                Style &#x2192;
-              </button>
+              <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
+              <Button disabled={photos.length === 0} onClick={() => setStep(2)}>
+                Style →
+              </Button>
             </div>
             {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
@@ -2609,18 +2419,10 @@ export default function Page() {
 
           <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
             <div className="flex justify-between w-full">
-              <button style={btnSecondary} onClick={() => setStep(1)}>&#x2190; Back</button>
-              <button
-                style={{
-                  ...btnPrimary,
-                  opacity: ok && !quickGenerating ? 1 : 0.5,
-                  cursor: ok && !quickGenerating ? "pointer" : "not-allowed",
-                }}
-                disabled={!ok || quickGenerating}
-                onClick={fullBuilderAdvance}
-              >
+              <Button variant="secondary" onClick={() => setStep(1)}>\u2190 Back</Button>
+              <Button disabled={!ok || quickGenerating} onClick={fullBuilderAdvance}>
                 {quickGenerating ? "Writing journal\u2026" : hasAnyAi ? "Update Journal" : "Generate Journal"}
-              </button>
+              </Button>
             </div>
             {user && rateStatus?.signedIn && typeof rateStatus.dailyRemaining === "number" && rateStatus.dailyRemaining < 10 && (
               <div className="text-stone font-body" style={{ fontSize: 13 }}>
