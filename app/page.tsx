@@ -12,6 +12,7 @@ import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
+import { JournalProvider } from "@/app/context/JournalContext";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -202,6 +203,14 @@ function HeaderBtn({ onClick, children }: { onClick: () => void; children: React
 
 /* ── Main App ── */
 export default function Page() {
+  return (
+    <JournalProvider>
+      <PageInner />
+    </JournalProvider>
+  );
+}
+
+function PageInner() {
   const [mode, setMode] = useState<Mode>(null);
   const [step, setStep] = useState(0);
   const [tripTitle, setTripTitle] = useState("");
