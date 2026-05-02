@@ -22,7 +22,6 @@ interface RewriteAllProps {
    * parent snapshot the ws/len that wrote the now-current journal text
    * so the regenerate-on-settings-change prompt knows what to compare. */
   onContentRegenerated?: () => void;
-  onSaveHistory?: () => void;
   journalId?: string | null;
   /** Per-journal rewrite counter (used / 30). When >= 30 the parent
    * page disables the button entirely; we surface the soft warning
@@ -40,9 +39,8 @@ interface StagedResult {
 export default function RewriteAll({
   photos, onUpdate: up, title, brief, wordStyle: ws, visualStyle: vk, dateDisplay: dd,
   length: len, onLengthChange, onContentRegenerated,
-  onSaveHistory, journalId, rewritesUsed, rewritesRemaining,
+  journalId, rewritesUsed, rewritesRemaining,
 }: RewriteAllProps) {
-  const save = () => onSaveHistory?.();
   const [loading, setLoading] = useState(false);
   const [staged, setStaged] = useState<Record<number, StagedResult> | null>(null);
   const cancelRef = useRef(false);
@@ -111,7 +109,6 @@ export default function RewriteAll({
 
   const acceptAll = () => {
     if (!staged) return;
-    save();
     for (const p of photos) {
       const s = staged[p.id];
       if (!s) continue;
@@ -128,7 +125,6 @@ export default function RewriteAll({
     if (!staged) return;
     const s = staged[id];
     if (!s) return;
-    save();
     if (s.caption) up(id, "aiCaption", s.caption);
     up(id, "aiNotes", s.notes ?? "");
     if (s.paragraph) up(id, "aiParagraph", s.paragraph);

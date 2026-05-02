@@ -12,7 +12,6 @@ import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
 import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
-import { useHistory, ContentSnapshot } from "@/app/lib/history";
 import { compressImage } from "@/app/lib/compress";
 import DatePicker from "@/app/components/DatePicker";
 import PhotoCard from "@/app/components/PhotoCard";
@@ -349,59 +348,6 @@ export default function Page() {
 
   const openSignIn = useCallback(() => { setAuthModalMode("signin"); setAuthModalOpen(true); }, []);
   const openSignUp = useCallback(() => { setAuthModalMode("signup"); setAuthModalOpen(true); }, []);
-
-  // ── Undo / redo (content changes only) ──
-  const getContentSnapshot = useCallback<() => ContentSnapshot>(() => ({
-    tripTitle,
-    tripBrief,
-    startDate: startDate ? startDate.toISOString() : null,
-    endDate: endDate ? endDate.toISOString() : null,
-    photos,
-    coverPhotoId,
-  }), [tripTitle, tripBrief, startDate, endDate, photos, coverPhotoId]);
-
-  const applyContentSnapshot = useCallback((s: ContentSnapshot) => {
-    setTripTitle(s.tripTitle);
-    setTripBrief(s.tripBrief);
-    setStartDate(s.startDate ? new Date(s.startDate) : null);
-    setEndDate(s.endDate ? new Date(s.endDate) : null);
-    setPhotos(s.photos);
-    setCoverPhotoId(s.coverPhotoId);
-  }, []);
-
-  const { saveToHistory, undo, redo, clearHistory } = useHistory(
-    getContentSnapshot,
-    applyContentSnapshot,
-    quickGenerating,
-  );
-
-  // Undo/redo is keyboard-only (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y).
-  // The header buttons were removed to avoid showing controls that look
-  // editable but skip many actions (style picks, photo reorder, dates, etc).
-  const isBuilderPage =
-    (mode === "quick" && (step === 0 || step === 10)) ||
-    (mode === "full" && step >= 0 && step <= 2);
-
-  // Keyboard shortcuts — only bind when undo/redo is available.
-  useEffect(() => {
-    if (!isBuilderPage) return;
-    const handler = (e: KeyboardEvent) => {
-      const isMac = typeof navigator !== "undefined" &&
-        navigator.platform.toUpperCase().includes("MAC");
-      const mod = isMac ? e.metaKey : e.ctrlKey;
-      if (!mod) return;
-      const key = e.key.toLowerCase();
-      if (key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((key === "z" && e.shiftKey) || key === "y") {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isBuilderPage, undo, redo]);
 
   // ── Refresh the user's saved-journals list whenever auth changes ──
   const refreshJournals = useCallback(async () => {
@@ -785,21 +731,16 @@ export default function Page() {
     setPhotos((p) => p.map((x) => (x.id === id ? { ...x, [field]: value } : x)));
 
   const removePhoto = (id: number) => {
-    saveToHistory();
     setPhotos((p) => p.filter((x) => x.id !== id));
     // Clear cover selection if the cover photo is deleted (keep title/subtitle)
     if (coverPhotoId === id) setCoverPhotoId(null);
   };
 
   const toggleCover = (id: number) => {
-    saveToHistory();
     setCoverPhotoId((current) => (current === id ? null : id));
   };
 
-  // Wrapper for drag-and-drop reorder: record a history entry before the
-  // reordered array is committed.
   const reorderPhotos = (next: Photo[]) => {
-    saveToHistory();
     setPhotos(next);
   };
 
@@ -818,7 +759,6 @@ export default function Page() {
 
   const doReset = () => {
     clearState();
-    clearHistory();
     setMode(null);
     setStep(0);
     setPhotos([]);
@@ -872,13 +812,12 @@ export default function Page() {
       const hasAi = data.photos.some((p) => p.aiCaption || p.aiNotes || p.aiParagraph);
       setMode(data.mode);
       setStep(hasAi ? 99 : data.mode === "quick" ? 0 : 1);
-      clearHistory();
     } catch (err) {
       console.error("Failed to open journal:", err);
       setToast("Couldn't open that journal. Try again.");
       setTimeout(() => setToast(null), 4000);
     }
-  }, [clearHistory]);
+  }, []);
 
   const renameJournalById = useCallback(async (id: string, title: string) => {
     if (!user) return;
@@ -952,7 +891,6 @@ export default function Page() {
         setTimeout(() => setToast(null), 4000);
         return;
       }
-      saveToHistory();
       setTripBrief(cleaned);
     } catch (err) {
       console.error("Brief generate failed:", err);
@@ -961,8 +899,6 @@ export default function Page() {
     } finally {
       setBriefGenerating(false);
     }
-    // saveToHistory is stable; the rest are direct deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [briefGenerating, photos, tripTitle, dateDisplay, ws]);
 
   const onClickGenerateBrief = useCallback(() => {
@@ -1839,7 +1775,7 @@ export default function Page() {
 
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Trip Title</label>
-              <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} onFocus={saveToHistory} />
+              <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
               <HelperText>This becomes the headline of your journal.</HelperText>
             </div>
 
@@ -1866,8 +1802,7 @@ export default function Page() {
                 placeholder="What made this trip special? The people, the food, the unexpected moments..."
                 value={tripBrief}
                 onChange={(e) => setTripBrief(e.target.value)}
-                onFocus={saveToHistory}
-              />
+                             />
               <HelperText>The more you write here, the more personal your journal will be. Write less and the AI fills in the gaps from what it sees in your photos. This also appears as the opening paragraph.</HelperText>
               {showBriefNudge && (
                 <div
@@ -2199,7 +2134,7 @@ export default function Page() {
 
             <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+              <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
             </div>
 
             <div className="grid gap-2" style={{ marginBottom: 14 }}>
@@ -2221,7 +2156,6 @@ export default function Page() {
                     dragHandleProps={handleProps}
                     index={i}
                     total={total}
-                    onSaveHistory={saveToHistory}
                     journalId={currentJournalId}
                   />
                 )}
@@ -2328,7 +2262,7 @@ export default function Page() {
 
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>Trip Title</label>
-            <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} onFocus={saveToHistory} />
+            <input style={iStyle} placeholder="e.g. Two Weeks in Patagonia" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)} />
             <HelperText>This becomes the headline of your journal.</HelperText>
           </div>
 
@@ -2492,8 +2426,7 @@ export default function Page() {
                   isCover={coverPhotoId === p.id}
                   onToggleCover={toggleCover}
                   dragHandleProps={handleProps}
-                  onSaveHistory={saveToHistory}
-                  journalId={currentJournalId}
+                    journalId={currentJournalId}
                 />
               )}
               renderOverlay={(p) => (
@@ -2624,7 +2557,7 @@ export default function Page() {
 
           <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>Content</label>
-            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} onSaveHistory={saveToHistory} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
+            <RewriteAll photos={photos} onUpdate={updatePhoto} title={tripTitle} brief={tripBrief} wordStyle={ws} visualStyle={vk} dateDisplay={dateDisplay} length={len} onLengthChange={setLen} onContentRegenerated={() => { setGenWs(ws); setGenLen(len); }} journalId={currentJournalId} rewritesUsed={rateStatus?.journalRewritesUsed} rewritesRemaining={rateStatus?.journalRewritesRemaining} />
           </div>
           <HelperText>Regenerates AI writing for all photos. You'll review each one before accepting.</HelperText>
           <div style={{ marginTop: 8 }} />

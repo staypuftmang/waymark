@@ -18,7 +18,6 @@ interface PhotoStyleRowProps {
   dragHandleProps?: Record<string, unknown>;
   index?: number;
   total?: number;
-  onSaveHistory?: () => void;
   journalId?: string | null;
 }
 
@@ -34,10 +33,8 @@ export default function PhotoStyleRow({
   dragHandleProps,
   index,
   total,
-  onSaveHistory,
   journalId,
 }: PhotoStyleRowProps) {
-  const save = () => onSaveHistory?.();
   const [loadingCaption, setLC] = useState(false);
   const [loadingNotes, setLN] = useState(false);
   const [loadingParagraph, setLP] = useState(false);
@@ -75,7 +72,6 @@ export default function PhotoStyleRow({
   };
 
   const accept = (field: string) => {
-    save();
     const aiField = field === "caption" ? "aiCaption" : field === "notes" ? "aiNotes" : "aiParagraph";
     up(p.id, aiField, pending[field]);
     setPending((v) => {
@@ -243,7 +239,6 @@ export default function PhotoStyleRow({
                 <textarea
                   value={(p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string) || ""}
                   onChange={(e) => up(p.id, p[aiField as keyof Photo] ? aiField : field, e.target.value)}
-                  onFocus={save}
                   rows={5}
                   style={{ ...fieldStyle, resize: "vertical", minHeight: 120, lineHeight: 1.5 }}
                   placeholder={`Add ${label}...`}
@@ -252,7 +247,6 @@ export default function PhotoStyleRow({
                 <input
                   value={(p[aiField as keyof Photo] as string) || (p[field as keyof Photo] as string) || ""}
                   onChange={(e) => up(p.id, p[aiField as keyof Photo] ? aiField : field, e.target.value)}
-                  onFocus={save}
                   style={fieldStyle}
                   placeholder={`Add ${label}...`}
                 />
