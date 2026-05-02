@@ -296,6 +296,11 @@ interface JournalContextValue {
   /** Reset the diff caches that drive the cloud-save layer. Called when the
    * signed-in user changes or after an explicit reset. */
   resetSaveCaches: () => void;
+  /** Seed the diff caches with the just-loaded baseline so the next
+   * cloud-save tick treats the loaded state as already-persisted and
+   * doesn't trigger a redundant wholesale photo resync. Called from
+   * openJournalById after LOAD_FROM_REMOTE. */
+  seedSaveCaches: (photos: Photo[], coverPhotoId: number | string | null, remoteIdMap: Record<number, string>) => void;
   /** Cloud-save callback fired after a successful Supabase write so the
    * landing-page journals grid can refresh. Set by page.tsx via setOnRefreshJournals. */
   setOnRefreshJournals: (fn: (() => void) | null) => void;
@@ -329,6 +334,15 @@ export function JournalProvider({ children }: JournalProviderProps) {
     lastSavedCoverIdRef.current = null;
     remoteIdMapRef.current = {};
   }, []);
+
+  const seedSaveCaches = useCallback(
+    (photos: Photo[], coverPhotoId: number | string | null, remoteIdMap: Record<number, string>) => {
+      lastSavedPhotosRef.current = photos;
+      lastSavedCoverIdRef.current = coverPhotoId;
+      remoteIdMapRef.current = remoteIdMap;
+    },
+    [],
+  );
 
   // Reset the diff caches when the signed-in user changes — a different
   // user has different remote photo ids, and the cache for one user must
@@ -530,8 +544,8 @@ export function JournalProvider({ children }: JournalProviderProps) {
   }, [state.photos.length, state.softCapDismissed]);
 
   const value: JournalContextValue = useMemo(
-    () => ({ state, dispatch, resetSaveCaches, setOnRefreshJournals }),
-    [state, resetSaveCaches],
+    () => ({ state, dispatch, resetSaveCaches, seedSaveCaches, setOnRefreshJournals }),
+    [state, resetSaveCaches, seedSaveCaches],
   );
 
   return <JournalContext.Provider value={value}>{children}</JournalContext.Provider>;

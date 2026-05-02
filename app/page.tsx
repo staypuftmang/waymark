@@ -10,7 +10,7 @@ import { quickCreatePrompt, tripBriefFromPhotosPrompt, batchRewritePrompt } from
 import { aiCall, setFallbackListener, setRateLimitListener, setRateStatusListener, fetchRateStatus } from "@/app/lib/ai";
 import { makeThumbnail } from "@/app/lib/compress";
 import type { RateLimitErrorInfo, RateLimitStatus } from "@/app/lib/ai";
-import { saveState, loadState, clearState, SavedState } from "@/app/lib/storage";
+import { loadState, clearState, SavedState } from "@/app/lib/storage";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
 import { JournalProvider, useJournal, type SaveStatus } from "@/app/context/JournalContext";
 import { compressImage } from "@/app/lib/compress";
@@ -41,17 +41,12 @@ import AiButton from "@/app/components/AiButton";
 import SignupPromptPanel from "@/app/components/SignupPromptPanel";
 import { useAuth } from "@/app/lib/AuthContext";
 import {
-  saveJournalMetadata,
-  syncJournalPhotos,
-  updatePhotoFields,
   loadJournal as loadJournalRemote,
   listJournals as listJournalsRemote,
   deleteJournal as deleteJournalRemote,
   duplicateJournal as duplicateJournalRemote,
   renameJournal as renameJournalRemote,
-  isEmptyJournal,
   type JournalSummary,
-  type PhotoTextFields,
 } from "@/app/lib/journalStorage";
 
 /* ── Shared inline styles ── */
@@ -214,7 +209,7 @@ function PageInner() {
   //    destructure into local aliases so the existing JSX/handler call
   //    sites can stay unchanged, then provide setter aliases below that
   //    forward to dispatch. ──
-  const { state, dispatch, resetSaveCaches } = useJournal();
+  const { state, dispatch, resetSaveCaches, seedSaveCaches, setOnRefreshJournals } = useJournal();
   const {
     mode, step,
     tripTitle, tripBrief, startDate, endDate,
@@ -317,7 +312,8 @@ function PageInner() {
 
   const fullRef = useRef<HTMLInputElement>(null);
   const quickRef = useRef<HTMLInputElement>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // saveTimer / cloudSaveTimer / lastSavedPhotosRef etc. were moved into
+  // JournalProvider in STEP 3 — the provider owns auto-save now.
 
   // ── Auth + cloud journals ──
   const { user } = useAuth();
@@ -383,18 +379,6 @@ function PageInner() {
   const [signupPromptVisible, setSignupPromptVisible] = useState(false);
   const signupPromptDoneRef = useRef(false);
   const signupPromptWasOpenRef = useRef(false);
-  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedUserIdRef = useRef<string | null>(null);
-
-  // Diff-based photo save state. lastSavedPhotosRef is the snapshot of the
-  // photos array at the end of the last successful save — the save effect
-  // diffs against it to decide between a full wholesale sync and targeted
-  // per-row UPDATEs. remoteIdMapRef maps client-side numeric photo ids to
-  // the DB UUIDs so we can target individual rows.
-  const lastSavedPhotosRef = useRef<Photo[] | null>(null);
-  const lastSavedCoverIdRef = useRef<number | string | null>(null);
-  const remoteIdMapRef = useRef<Record<number, string>>({});
 
   const openSignIn = useCallback(() => { setAuthModalMode("signin"); setAuthModalOpen(true); }, []);
   const openSignUp = useCallback(() => { setAuthModalMode("signup"); setAuthModalOpen(true); }, []);
@@ -418,137 +402,13 @@ function PageInner() {
 
   useEffect(() => { refreshJournals(); }, [refreshJournals]);
 
-  // Reset currentJournalId + diff refs when the signed-in user changes
+  // Hand the journals-list refresher to the provider so the cloud-save
+  // effect there can refresh the landing-page grid after each successful
+  // write. Cleared on unmount so the provider doesn't hold a stale ref.
   useEffect(() => {
-    const uid = user?.id ?? null;
-    if (lastSavedUserIdRef.current !== uid) {
-      lastSavedUserIdRef.current = uid;
-      setCurrentJournalId(null);
-      lastSavedPhotosRef.current = null;
-      lastSavedCoverIdRef.current = null;
-      remoteIdMapRef.current = {};
-    }
-  }, [user]);
-
-  // ── Cloud auto-save (debounced 2s) for signed-in users ──
-  useEffect(() => {
-    if (!user) return;
-    if (quickGenerating) return; // don't churn during AI generation
-
-    const data = {
-      id: currentJournalId,
-      mode: (mode === "full" ? "full" : "quick") as "quick" | "full",
-      tripTitle,
-      tripBrief,
-      startDate: startDate ? startDate.toISOString().slice(0, 10) : null,
-      endDate: endDate ? endDate.toISOString().slice(0, 10) : null,
-      visualStyle: vk,
-      wordStyle: ws,
-      length: len,
-      generationWordStyle: genWs,
-      generationLength: genLen,
-      layout: lo,
-      coverPhotoId,
-      coverTitle,
-      coverSubtitle,
-      coverTitleEdited,
-      photos,
-    };
-
-    if (isEmptyJournal(data)) return;
-
-    if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
-    setSaveStatus("saving");
-    cloudSaveTimer.current = setTimeout(async () => {
-      try {
-        // 1. Always save lightweight metadata (title, dates, brief, style, layout,
-        //    cover title/subtitle). Tiny payload, no base64.
-        const journalId = await saveJournalMetadata(user.id, currentJournalId, data);
-        if (!currentJournalId) setCurrentJournalId(journalId);
-
-        // 2. Decide between a wholesale photos sync and per-row text updates.
-        const last = lastSavedPhotosRef.current;
-        const coverChanged = lastSavedCoverIdRef.current !== data.coverPhotoId;
-        const structuralChange =
-          !last ||
-          coverChanged ||
-          last.length !== data.photos.length ||
-          data.photos.some((p, i) => last[i]?.id !== p.id);
-
-        if (structuralChange) {
-          // Photos were added, removed, reordered, or cover reassigned —
-          // delete + reinsert the full set. First save of a new journal also
-          // lands here (last === null).
-          const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
-          remoteIdMapRef.current = map;
-        } else {
-          // Same photos in the same order — only text/flag fields could have
-          // changed. Issue a targeted UPDATE per dirty row. No base64 touched.
-          const dirty: Array<[number, PhotoTextFields]> = [];
-          for (let i = 0; i < data.photos.length; i++) {
-            const curr = data.photos[i];
-            const prev = last![i];
-            const fields: PhotoTextFields = {};
-            if (curr.caption !== prev.caption) fields.caption = curr.caption || "";
-            if (curr.notes !== prev.notes) fields.notes = curr.notes || "";
-            if (curr.paragraph !== prev.paragraph) fields.paragraph = curr.paragraph || "";
-            if (curr.aiCaption !== prev.aiCaption) fields.ai_caption = curr.aiCaption || "";
-            if (curr.aiNotes !== prev.aiNotes) fields.ai_notes = curr.aiNotes || "";
-            if (curr.aiParagraph !== prev.aiParagraph) fields.ai_paragraph = curr.aiParagraph || "";
-            if (Object.keys(fields).length > 0) dirty.push([curr.id, fields]);
-          }
-          if (dirty.length > 0) {
-            const results = await Promise.allSettled(
-              dirty.map(([clientId, fields]) => {
-                const remoteId = remoteIdMapRef.current[clientId];
-                if (!remoteId) return Promise.reject(new Error("missing remote id"));
-                return updatePhotoFields(remoteId, fields);
-              }),
-            );
-            const anyMissingRemote = results.some(
-              (r) => r.status === "rejected" && String(r.reason?.message).includes("missing remote id"),
-            );
-            if (anyMissingRemote) {
-              // Fall back to a wholesale sync to re-establish remote ids.
-              const map = await syncJournalPhotos(journalId, { ...data, id: journalId });
-              remoteIdMapRef.current = map;
-            } else {
-              const firstFailure = results.find((r) => r.status === "rejected");
-              if (firstFailure && firstFailure.status === "rejected") throw firstFailure.reason;
-            }
-          }
-        }
-
-        lastSavedPhotosRef.current = data.photos;
-        lastSavedCoverIdRef.current = data.coverPhotoId;
-
-        setSaveStatus("saved");
-        if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
-        savedFlashTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
-        // Refresh listings so the landing-page grid reflects the latest title/cover/time
-        refreshJournals();
-      } catch (err) {
-        console.error("Cloud save failed:", err);
-        setSaveStatus("offline");
-        if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
-        savedFlashTimer.current = setTimeout(() => setSaveStatus("idle"), 3000);
-      }
-    }, 2000);
-
-    return () => {
-      if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    user,
-    tripTitle, tripBrief,
-    startDate, endDate,
-    vk, ws, len, genWs, genLen, lo,
-    coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited,
-    photos,
-    currentJournalId,
-    quickGenerating,
-  ]);
+    setOnRefreshJournals(() => refreshJournals);
+    return () => setOnRefreshJournals(null);
+  }, [refreshJournals, setOnRefreshJournals]);
 
   // ── Email capture: show the signup panel exactly once per session when a
   //    signed-out Quick Create user lands on the preview with AI content. ──
@@ -639,37 +499,6 @@ function PageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
-
-  // ── Auto-save with 2s debounce ──
-  useEffect(() => {
-    if (!appReady || mode === null) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const state: SavedState = {
-        mode: mode as "quick" | "full",
-        step,
-        tripTitle,
-        tripBrief,
-        startDate: startDate ? startDate.toISOString() : null,
-        endDate: endDate ? endDate.toISOString() : null,
-        visualStyleKey: vk,
-        wordStyle: ws,
-        length: len,
-        generationWordStyle: genWs,
-        generationLength: genLen,
-        layoutKey: lo,
-        photos,
-        coverPhotoId,
-        coverTitle,
-        coverSubtitle,
-        coverTitleEdited,
-      };
-      saveState(state);
-    }, 2000);
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [appReady, mode, step, tripTitle, tripBrief, startDate, endDate, vk, ws, len, genWs, genLen, lo, photos, coverPhotoId, coverTitle, coverSubtitle, coverTitleEdited]);
 
   const resumeJournal = () => {
     if (!savedJournal) return;
@@ -838,11 +667,9 @@ function PageInner() {
       setCoverSubtitle(data.coverSubtitle);
       setCoverTitleEdited(data.coverTitleEdited);
       setCurrentJournalId(data.id);
-      // Prime diff refs so the first auto-save after open doesn't look
-      // structural (same photos in the same order as what the DB already has).
-      lastSavedPhotosRef.current = data.photos;
-      lastSavedCoverIdRef.current = data.coverPhotoId;
-      remoteIdMapRef.current = loaded.photoRemoteIds;
+      // Prime the provider's diff caches so the first auto-save after open
+      // doesn't look structural (same photos in the same order as the DB).
+      seedSaveCaches(data.photos, data.coverPhotoId, loaded.photoRemoteIds);
       // Route based on the stored mode so the user lands in the builder
       // they originally chose. Journals with any AI content open straight
       // to the preview (step 99); work-in-progress lands in that mode's
