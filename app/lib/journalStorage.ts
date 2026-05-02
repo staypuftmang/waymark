@@ -3,6 +3,7 @@ import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey } from "
 import {
   PHOTOS_BUCKET,
   deleteJournalPhotos as deleteJournalPhotoStorage,
+  getPhotoUrl,
   isStoragePath,
   uploadPhoto,
 } from "./photoStorage";
@@ -35,6 +36,12 @@ export interface JournalData {
 export interface LoadedJournal {
   data: JournalData;
   photoRemoteIds: Record<number, string>;
+  /** clientId → storage path. Populated for photos whose DB src column
+   * is a storage path. The display src on the photo itself is a signed
+   * URL (resolveStoragePaths !== false) or the raw path; this map lets
+   * the save layer remember the underlying path so it can re-persist it
+   * without re-uploading. */
+  photoStoragePaths: Record<number, string>;
 }
 
 export interface JournalSummary {
@@ -170,27 +177,30 @@ export interface SyncJournalPhotosResult {
   /** clientId → DB row UUID. Used by the caller to target individual
    * rows for later text updates. */
   remoteIdMap: Record<number, string>;
-  /** Photos whose src changed during the sync (base64 → storage path).
-   * The caller should dispatch these into state so the in-memory photo
-   * src matches what was just persisted, otherwise the next save would
-   * re-upload the same base64 to a fresh storage path. */
-  srcUpdates: Array<{ id: number; src: string }>;
+  /** clientId → storage path. Reflects the post-sync state. Includes
+   * pre-existing paths and any new paths from fresh uploads. The caller
+   * keeps this map so the next sync knows which photos already live in
+   * Storage and shouldn't be re-uploaded. */
+  storagePaths: Record<number, string>;
 }
 
 /**
  * Wholesale delete + reinsert of every journal_photos row for a journal.
- * Use only when photos are added, removed, reordered, or the cover assignment
- * changes.
+ * Use only when photos are added, removed, reordered, or the cover
+ * assignment changes.
  *
  * Lazy migration: any photo whose src is still a base64 data URL is
  * uploaded to the journal-photos bucket here, and the storage path is
- * what gets persisted in journal_photos.src. Already-migrated photos
- * (storage paths) pass through untouched.
+ * what gets persisted in journal_photos.src. Photos already known to
+ * have storage paths (via knownStoragePaths) reuse those paths; raw
+ * storage-path strings in src (e.g. duplicateJournal's freshly-copied
+ * photos) pass through; legacy unknown strings are persisted as-is.
  */
 export async function syncJournalPhotos(
   userId: string,
   journalId: string,
   data: JournalData,
+  knownStoragePaths: Record<number, string> = {},
 ): Promise<SyncJournalPhotosResult> {
   const { error: delErr } = await supabase
     .from("journal_photos")
@@ -198,20 +208,34 @@ export async function syncJournalPhotos(
     .eq("journal_id", journalId);
   if (delErr) throw delErr;
 
-  if (data.photos.length === 0) return { remoteIdMap: {}, srcUpdates: [] };
+  if (data.photos.length === 0) {
+    return { remoteIdMap: {}, storagePaths: {} };
+  }
 
-  const srcUpdates: Array<{ id: number; src: string }> = [];
+  const storagePaths: Record<number, string> = {};
   const photosForInsert: Photo[] = await Promise.all(
     data.photos.map(async (p) => {
-      if (isStoragePath(p.src)) return p;
-      // Anonymous IDB-restored photos still have base64 srcs even after
-      // sign-in; non-base64 / non-storage strings (e.g. a stray http URL)
-      // get persisted as-is to avoid throwing mid-save.
-      if (!p.src.startsWith("data:")) return p;
-      console.log(`Migrating photo ${p.id} from base64 to Storage for journal ${journalId}`);
-      const path = await uploadPhoto(supabase, userId, journalId, p.id, p.src);
-      srcUpdates.push({ id: p.id, src: path });
-      return { ...p, src: path };
+      // 1. Raw storage path passed in directly (e.g. from duplicateJournal).
+      if (isStoragePath(p.src)) {
+        storagePaths[p.id] = p.src;
+        return p;
+      }
+      // 2. Already uploaded — display src is a signed URL, real path
+      //    lives in the caller's knownStoragePaths map.
+      const known = knownStoragePaths[p.id];
+      if (known) {
+        storagePaths[p.id] = known;
+        return { ...p, src: known };
+      }
+      // 3. Fresh base64 — upload now and remember the path.
+      if (p.src.startsWith("data:")) {
+        console.log(`Migrating photo ${p.id} from base64 to Storage for journal ${journalId}`);
+        const path = await uploadPhoto(supabase, userId, journalId, p.id, p.src);
+        storagePaths[p.id] = path;
+        return { ...p, src: path };
+      }
+      // 4. Legacy / unknown string — pass through to preserve back-compat.
+      return p;
     }),
   );
 
@@ -231,7 +255,7 @@ export async function syncJournalPhotos(
     const remoteId = byOrder[i];
     if (remoteId) remoteIdMap[p.id] = remoteId;
   });
-  return { remoteIdMap, srcUpdates };
+  return { remoteIdMap, storagePaths };
 }
 
 /**
@@ -261,8 +285,9 @@ export interface LoadJournalOptions {
 
 export async function loadJournal(
   journalId: string,
-  _opts: LoadJournalOptions = {},
+  opts: LoadJournalOptions = {},
 ): Promise<LoadedJournal> {
+  const resolveStoragePaths = opts.resolveStoragePaths !== false;
   const { data: journal, error: journalError } = await supabase
     .from("journals")
     .select("*")
@@ -278,9 +303,24 @@ export async function loadJournal(
     .returns<JournalPhotoRow[]>();
   if (photosError) throw photosError;
 
-  const photoObjs: Photo[] = (photos ?? []).map((p, i) => ({
+  const photoRows = photos ?? [];
+  const resolvedSrcs: string[] = await Promise.all(
+    photoRows.map(async (p) => {
+      if (resolveStoragePaths && isStoragePath(p.src)) {
+        try {
+          return await getPhotoUrl(supabase, p.src);
+        } catch (err) {
+          console.warn(`Failed to sign photo URL for ${p.src}:`, err);
+          return p.src;
+        }
+      }
+      return p.src;
+    }),
+  );
+
+  const photoObjs: Photo[] = photoRows.map((p, i) => ({
     id: i + 1,
-    src: p.src,
+    src: resolvedSrcs[i],
     caption: p.caption ?? "",
     notes: p.notes ?? "",
     paragraph: p.paragraph ?? "",
@@ -293,7 +333,12 @@ export async function loadJournal(
   const coverPhotoId = coverIdx >= 0 ? photoObjs[coverIdx].id : null;
 
   const photoRemoteIds: Record<number, string> = {};
-  (photos ?? []).forEach((p, i) => { photoRemoteIds[photoObjs[i].id] = p.id; });
+  const photoStoragePaths: Record<number, string> = {};
+  photoRows.forEach((p, i) => {
+    const clientId = photoObjs[i].id;
+    photoRemoteIds[clientId] = p.id;
+    if (isStoragePath(p.src)) photoStoragePaths[clientId] = p.src;
+  });
 
   return {
     data: {
@@ -316,36 +361,69 @@ export async function loadJournal(
       photos: photoObjs,
     },
     photoRemoteIds,
+    photoStoragePaths,
   };
 }
 
 export async function listJournals(userId: string): Promise<JournalSummary[]> {
-  const { data, error } = await supabase
+  // Two-step fetch so the dashboard never downloads the full src column
+  // for every photo in every journal — pre-migration that was megabytes
+  // of base64 per journal. We pull metadata first, then only candidate
+  // cover-thumb rows (is_cover OR photo_order = 0).
+  const { data: journalRows, error } = await supabase
     .from("journals")
     .select(
-      "id, title, mode, visual_style, layout, status, share_slug, is_public, created_at, updated_at, journal_photos(src, is_cover, photo_order)"
+      "id, title, mode, visual_style, layout, status, share_slug, is_public, created_at, updated_at"
     )
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
   if (error) throw error;
 
-  return (data ?? []).map((j: unknown) => {
-    const row = j as {
-      id: string;
-      title: string | null;
-      mode: string | null;
-      visual_style: string;
-      layout: string;
-      status: string;
-      share_slug: string | null;
-      is_public: boolean | null;
-      created_at: string;
-      updated_at: string;
-      journal_photos: { src: string; is_cover: boolean; photo_order: number }[] | null;
-    };
-    const photos = row.journal_photos ?? [];
-    const cover = photos.find((p) => p.is_cover);
-    const firstByOrder = [...photos].sort((a, b) => a.photo_order - b.photo_order)[0];
+  const journals = (journalRows ?? []) as Array<{
+    id: string;
+    title: string | null;
+    mode: string | null;
+    visual_style: string;
+    layout: string;
+    status: string;
+    share_slug: string | null;
+    is_public: boolean | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+
+  if (journals.length === 0) return [];
+
+  const journalIds = journals.map((j) => j.id);
+  const { data: photoRows, error: photoErr } = await supabase
+    .from("journal_photos")
+    .select("journal_id, src, is_cover, photo_order")
+    .in("journal_id", journalIds)
+    .or("is_cover.eq.true,photo_order.eq.0")
+    .returns<{ journal_id: string; src: string; is_cover: boolean; photo_order: number }[]>();
+  if (photoErr) throw photoErr;
+
+  const candidates = new Map<string, { src: string; is_cover: boolean; photo_order: number }[]>();
+  for (const p of photoRows ?? []) {
+    const arr = candidates.get(p.journal_id) ?? [];
+    arr.push({ src: p.src, is_cover: p.is_cover, photo_order: p.photo_order });
+    candidates.set(p.journal_id, arr);
+  }
+
+  const summaries = await Promise.all(journals.map(async (row) => {
+    const list = candidates.get(row.id) ?? [];
+    const cover = list.find((p) => p.is_cover);
+    const firstByOrder = [...list].sort((a, b) => a.photo_order - b.photo_order)[0];
+    const rawSrc = cover?.src ?? firstByOrder?.src ?? null;
+    let coverPhotoSrc: string | null = rawSrc;
+    if (rawSrc && isStoragePath(rawSrc)) {
+      try {
+        coverPhotoSrc = await getPhotoUrl(supabase, rawSrc);
+      } catch (err) {
+        console.warn(`Failed to sign cover URL for journal ${row.id}:`, err);
+        coverPhotoSrc = null;
+      }
+    }
     return {
       id: row.id,
       title: row.title ?? "",
@@ -355,11 +433,13 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
       status: row.status,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      coverPhotoSrc: cover?.src ?? firstByOrder?.src ?? null,
+      coverPhotoSrc,
       isPublic: !!row.is_public,
       shareSlug: row.share_slug,
-    };
-  });
+    } as JournalSummary;
+  }));
+
+  return summaries;
 }
 
 export async function deleteJournal(userId: string, journalId: string): Promise<void> {

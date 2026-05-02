@@ -300,7 +300,12 @@ interface JournalContextValue {
    * cloud-save tick treats the loaded state as already-persisted and
    * doesn't trigger a redundant wholesale photo resync. Called from
    * openJournalById after LOAD_FROM_REMOTE. */
-  seedSaveCaches: (photos: Photo[], coverPhotoId: number | string | null, remoteIdMap: Record<number, string>) => void;
+  seedSaveCaches: (
+    photos: Photo[],
+    coverPhotoId: number | string | null,
+    remoteIdMap: Record<number, string>,
+    storagePaths: Record<number, string>,
+  ) => void;
   /** Cloud-save callback fired after a successful Supabase write so the
    * landing-page journals grid can refresh. Set by page.tsx via setOnRefreshJournals. */
   setOnRefreshJournals: (fn: (() => void) | null) => void;
@@ -327,19 +332,31 @@ export function JournalProvider({ children }: JournalProviderProps) {
   const lastSavedPhotosRef = useRef<Photo[] | null>(null);
   const lastSavedCoverIdRef = useRef<number | string | null>(null);
   const remoteIdMapRef = useRef<Record<number, string>>({});
+  // clientId → Storage path for photos already living in the
+  // journal-photos bucket. State.photos[i].src is the displayable form
+  // (signed URL after load, or base64 for fresh uploads); this map
+  // remembers the underlying path so re-syncs don't re-upload.
+  const storagePathsRef = useRef<Record<number, string>>({});
   const lastSavedUserIdRef = useRef<string | null>(null);
 
   const resetSaveCaches = useCallback(() => {
     lastSavedPhotosRef.current = null;
     lastSavedCoverIdRef.current = null;
     remoteIdMapRef.current = {};
+    storagePathsRef.current = {};
   }, []);
 
   const seedSaveCaches = useCallback(
-    (photos: Photo[], coverPhotoId: number | string | null, remoteIdMap: Record<number, string>) => {
+    (
+      photos: Photo[],
+      coverPhotoId: number | string | null,
+      remoteIdMap: Record<number, string>,
+      storagePaths: Record<number, string>,
+    ) => {
       lastSavedPhotosRef.current = photos;
       lastSavedCoverIdRef.current = coverPhotoId;
       remoteIdMapRef.current = remoteIdMap;
+      storagePathsRef.current = storagePaths;
     },
     [],
   );
@@ -458,18 +475,11 @@ export function JournalProvider({ children }: JournalProviderProps) {
           data.photos.some((p, i) => last[i]?.id !== p.id);
 
         if (structuralChange) {
-          const { remoteIdMap, srcUpdates } = await syncJournalPhotos(
-            user.id, journalId, { ...data, id: journalId },
+          const { remoteIdMap, storagePaths } = await syncJournalPhotos(
+            user.id, journalId, { ...data, id: journalId }, storagePathsRef.current,
           );
           remoteIdMapRef.current = remoteIdMap;
-          // Reflect base64 → storage-path migrations back into state so
-          // the next save doesn't re-upload the same content. Also update
-          // the local data snapshot used to seed lastSavedPhotosRef below.
-          for (const u of srcUpdates) {
-            dispatch({ type: "UPDATE_PHOTO_FIELD", id: u.id, field: "src", value: u.src });
-            const idx = data.photos.findIndex((p) => p.id === u.id);
-            if (idx >= 0) data.photos[idx] = { ...data.photos[idx], src: u.src };
-          }
+          storagePathsRef.current = storagePaths;
         } else {
           const dirty: Array<[number, PhotoTextFields]> = [];
           for (let i = 0; i < data.photos.length; i++) {
@@ -496,15 +506,11 @@ export function JournalProvider({ children }: JournalProviderProps) {
               (r) => r.status === "rejected" && String((r.reason as Error)?.message).includes("missing remote id"),
             );
             if (anyMissingRemote) {
-              const { remoteIdMap, srcUpdates } = await syncJournalPhotos(
-                user.id, journalId, { ...data, id: journalId },
+              const { remoteIdMap, storagePaths } = await syncJournalPhotos(
+                user.id, journalId, { ...data, id: journalId }, storagePathsRef.current,
               );
               remoteIdMapRef.current = remoteIdMap;
-              for (const u of srcUpdates) {
-                dispatch({ type: "UPDATE_PHOTO_FIELD", id: u.id, field: "src", value: u.src });
-                const idx = data.photos.findIndex((p) => p.id === u.id);
-                if (idx >= 0) data.photos[idx] = { ...data.photos[idx], src: u.src };
-              }
+              storagePathsRef.current = storagePaths;
             } else {
               const firstFailure = results.find((r) => r.status === "rejected");
               if (firstFailure && firstFailure.status === "rejected") throw firstFailure.reason;

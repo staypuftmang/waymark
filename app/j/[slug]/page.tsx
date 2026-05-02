@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
+import { isStoragePath } from "@/app/lib/photoStorage";
+import { getPublicPhotoUrl } from "@/app/lib/photoStorage.server";
 import PublicJournalView from "@/app/components/PublicJournalView";
 import { formatDate } from "@/app/lib/constants";
 import type { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
@@ -70,9 +72,22 @@ async function getPublicJournal(slug: string): Promise<PublicJournal | null> {
     .returns<PhotoRow[]>();
 
   const rows = photoRows ?? [];
+  const resolvedSrcs: string[] = await Promise.all(
+    rows.map(async (p) => {
+      if (isStoragePath(p.src)) {
+        try {
+          return await getPublicPhotoUrl(p.src);
+        } catch (err) {
+          console.warn(`Failed to sign public photo URL for ${p.src}:`, err);
+          return p.src;
+        }
+      }
+      return p.src;
+    }),
+  );
   const photos: Photo[] = rows.map((p, i) => ({
     id: i + 1,
-    src: p.src,
+    src: resolvedSrcs[i],
     caption: p.caption ?? "",
     notes: p.notes ?? "",
     paragraph: p.paragraph ?? "",

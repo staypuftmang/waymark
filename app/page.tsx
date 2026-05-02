@@ -676,7 +676,7 @@ function PageInner() {
       setCurrentJournalId(data.id);
       // Prime the provider's diff caches so the first auto-save after open
       // doesn't look structural (same photos in the same order as the DB).
-      seedSaveCaches(data.photos, data.coverPhotoId, loaded.photoRemoteIds);
+      seedSaveCaches(data.photos, data.coverPhotoId, loaded.photoRemoteIds, loaded.photoStoragePaths);
       // Route based on the stored mode so the user lands in the builder
       // they originally chose. Journals with any AI content open straight
       // to the preview (step 99); work-in-progress lands in that mode's
