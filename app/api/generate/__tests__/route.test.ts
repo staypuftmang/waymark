@@ -331,8 +331,9 @@ describe("POST /api/generate — Anthropic interaction", () => {
     const res = await POST(req);
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Generation failed");
-    expect(body.text).toBe("");
+    // New standardized error shape — code in `error`, human text in `message`.
+    expect(body.error).toBe("generation_failed");
+    expect(body.message).toBe("Generation failed");
   });
 
   it("does NOT record usage if the Anthropic call fails", async () => {

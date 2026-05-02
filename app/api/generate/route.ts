@@ -1,5 +1,4 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { supabaseAdmin } from "@/app/lib/supabase-admin";
 import {
   checkUserRateLimit,
   checkJournalCreationLimit,
@@ -10,6 +9,7 @@ import {
   DAILY_LIMIT,
   type ActionType,
 } from "@/app/lib/rateLimit";
+import { apiError, parseBody, withAuth, z } from "@/app/lib/api";
 
 const client = new Anthropic();
 
@@ -89,21 +89,6 @@ function getClientIp(req: Request): string {
   return "unknown";
 }
 
-async function getUserIdFromAuth(req: Request): Promise<string | null> {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth || !auth.startsWith("Bearer ")) return null;
-  const token = auth.slice(7).trim();
-  if (!token) return null;
-  try {
-    const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !data?.user) return null;
-    return data.user.id;
-  } catch (e) {
-    console.error("Failed to verify auth token:", e instanceof Error ? e.message : "unknown");
-    return null;
-  }
-}
-
 type ContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } };
@@ -133,153 +118,173 @@ function buildContent(prompt: string, image?: string, images?: string[]): Conten
   return content;
 }
 
-const VALID_ACTIONS: ActionType[] = ["journal_created", "rewrite_single", "rewrite_batch_photo", "trip_brief_generate"];
+const VALID_ACTIONS = ["journal_created", "rewrite_single", "rewrite_batch_photo", "trip_brief_generate"] as const;
 
-export async function POST(req: Request) {
-  const userId = await getUserIdFromAuth(req);
-  const body = await req.json();
-  const { prompt, maxTokens = 1000, image, images } = body;
-  const actionType: ActionType = (VALID_ACTIONS.includes(body.actionType)
-    ? body.actionType
-    : "rewrite_single") as ActionType;
-  const journalId: string | null = typeof body.journalId === "string" && body.journalId ? body.journalId : null;
-  const record: boolean = body.record !== false;
+const GenerateBodySchema = z.object({
+  prompt: z.string(),
+  maxTokens: z.number().int().positive().optional(),
+  image: z.string().optional(),
+  images: z.array(z.string()).optional(),
+  actionType: z.string().optional(),
+  journalId: z.string().nullable().optional(),
+  record: z.boolean().optional(),
+});
 
-  // Layered rate-limit checks (signed-in only). Each layer fails open if
-  // its own Supabase query fails — see rateLimit.ts.
-  if (userId) {
-    maybeCleanup();
+export const POST = withAuth(
+  async (req, { userId }) => {
+    const parsed = await parseBody(req, GenerateBodySchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
+    const prompt = body.prompt;
+    const maxTokens = body.maxTokens ?? 1000;
+    const image = body.image;
+    const images = body.images;
+    const actionType: ActionType = (VALID_ACTIONS as readonly string[]).includes(body.actionType ?? "")
+      ? (body.actionType as ActionType)
+      : "rewrite_single";
+    const journalId: string | null = typeof body.journalId === "string" && body.journalId ? body.journalId : null;
+    const record: boolean = body.record !== false;
 
-    // Legacy umbrella check — keeps 50/hr + 200/day per user as a safety net.
-    const umbrella = await checkUserRateLimit(userId);
-    if (!umbrella.allowed) {
-      return Response.json({
-        text: "", error: "rate_limited",
-        limit_type: umbrella.limitType,
-        reset_in_seconds: umbrella.resetInSeconds,
-        signed_in: true,
-        message: umbrella.limitType === "daily"
-          ? "Daily generation limit reached."
-          : "Hourly generation limit reached.",
-      }, { status: 429 });
-    }
+    // Layered rate-limit checks (signed-in only). Each layer fails open if
+    // its own Supabase query fails — see rateLimit.ts.
+    if (userId) {
+      maybeCleanup();
 
-    if (actionType === "journal_created" && record) {
-      const j = await checkJournalCreationLimit(userId);
-      if (!j.allowed) {
-        return Response.json({
-          text: "", error: "rate_limited",
-          limit_type: "journal_creation",
-          journals_used: j.used,
-          journals_remaining: j.remaining,
-          reset_in_seconds: j.resetInSeconds,
-          signed_in: true,
-          message: `Daily journal limit reached. You've created ${j.used} journals today. Your limit resets tomorrow. You can still edit your existing journals and download them.`,
-        }, { status: 429 });
-      }
-    } else if (actionType === "rewrite_single" || actionType === "rewrite_batch_photo") {
-      if (journalId) {
-        const r = await checkJournalRewriteLimit(journalId);
-        if (!r.allowed) {
-          if (r.reason === "cap") {
-            return Response.json({
-              text: "", error: "rate_limited",
-              limit_type: "journal_rewrites",
-              journal_rewrites_used: r.used,
-              journal_rewrites_remaining: r.remaining,
-              signed_in: true,
-              message: "All rewrites used for this journal. You've used all 30 AI rewrites on this journal. You can still edit text manually. Tip: Duplicate this journal to get a fresh set of rewrites.",
-            }, { status: 429 });
-          }
-          // cooldown
-          return Response.json({
-            text: "", error: "rate_limited",
-            limit_type: "cooldown",
-            cooldown_remaining_seconds: r.cooldownResetInSeconds,
-            journal_rewrites_used: r.used,
-            journal_rewrites_remaining: r.remaining,
+      // Legacy umbrella check — keeps 50/hr + 200/day per user as a safety net.
+      const umbrella = await checkUserRateLimit(userId);
+      if (!umbrella.allowed) {
+        return apiError(429, "rate_limited",
+          umbrella.limitType === "daily"
+            ? "Daily generation limit reached."
+            : "Hourly generation limit reached.",
+          {
+            limit_type: umbrella.limitType,
+            reset_in_seconds: umbrella.resetInSeconds,
             signed_in: true,
-            message: "AI is cooling down. Try again in a moment.",
-          }, { status: 429 });
+          },
+        );
+      }
+
+      if (actionType === "journal_created" && record) {
+        const j = await checkJournalCreationLimit(userId);
+        if (!j.allowed) {
+          return apiError(429, "rate_limited",
+            `Daily journal limit reached. You've created ${j.used} journals today. Your limit resets tomorrow. You can still edit your existing journals and download them.`,
+            {
+              limit_type: "journal_creation",
+              journals_used: j.used,
+              journals_remaining: j.remaining,
+              reset_in_seconds: j.resetInSeconds,
+              signed_in: true,
+            },
+          );
+        }
+      } else if (actionType === "rewrite_single" || actionType === "rewrite_batch_photo") {
+        if (journalId) {
+          const r = await checkJournalRewriteLimit(journalId);
+          if (!r.allowed) {
+            if (r.reason === "cap") {
+              return apiError(429, "rate_limited",
+                "All rewrites used for this journal. You've used all 30 AI rewrites on this journal. You can still edit text manually. Tip: Duplicate this journal to get a fresh set of rewrites.",
+                {
+                  limit_type: "journal_rewrites",
+                  journal_rewrites_used: r.used,
+                  journal_rewrites_remaining: r.remaining,
+                  signed_in: true,
+                },
+              );
+            }
+            return apiError(429, "rate_limited",
+              "AI is cooling down. Try again in a moment.",
+              {
+                limit_type: "cooldown",
+                cooldown_remaining_seconds: r.cooldownResetInSeconds,
+                journal_rewrites_used: r.used,
+                journal_rewrites_remaining: r.remaining,
+                signed_in: true,
+              },
+            );
+          }
         }
       }
-    }
-  } else {
-    const ip = getClientIp(req);
-    const ipCheck = checkIpRateLimit(ip);
-    if (!ipCheck.allowed) {
-      return Response.json({
-        text: "", error: "rate_limited",
-        limit_type: ipCheck.reason,
-        reset_in_seconds: ipCheck.resetInSeconds ?? 0,
-        signed_in: false,
-        message: "You've reached the generation limit. Sign in for a higher limit and to save your journals.",
-      }, { status: 429 });
-    }
-  }
-
-  const content = buildContent(prompt, image, Array.isArray(images) ? images : undefined);
-
-  const runWith = async (model: string) => {
-    const message = await client.messages.create({
-      model, max_tokens: maxTokens, messages: [{ role: "user", content }],
-    });
-    return message.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((b) => b.text).join("").trim();
-  };
-
-  // Build a usage-status payload for the client to update its UI without
-  // a follow-up probe.
-  async function buildResponseMeta() {
-    const meta: Record<string, unknown> = { signedIn: !!userId };
-    if (userId) {
-      // Refresh counts now that we (may have) recorded a row.
-      const u = await checkUserRateLimit(userId);
-      meta.hourlyRemaining = u.hourlyRemaining;
-      meta.dailyRemaining = u.dailyRemaining;
-      const jc = await checkJournalCreationLimit(userId);
-      meta.journalsUsed = jc.used;
-      meta.journalsRemaining = jc.remaining;
-      if (journalId) {
-        const r = await checkJournalRewriteLimit(journalId);
-        meta.journalRewritesUsed = r.used;
-        meta.journalRewritesRemaining = r.remaining;
-        meta.cooldownActive = r.cooldownActive;
-        meta.cooldownRemainingSeconds = r.cooldownResetInSeconds;
+    } else {
+      const ip = getClientIp(req);
+      const ipCheck = checkIpRateLimit(ip);
+      if (!ipCheck.allowed) {
+        return apiError(429, "rate_limited",
+          "You've reached the generation limit. Sign in for a higher limit and to save your journals.",
+          {
+            limit_type: ipCheck.reason,
+            reset_in_seconds: ipCheck.resetInSeconds ?? 0,
+            signed_in: false,
+          },
+        );
       }
     }
-    return meta;
-  }
 
-  try {
-    let text = "";
-    let model = PRIMARY_MODEL;
-    let fallback = false;
+    const content = buildContent(prompt, image, Array.isArray(images) ? images : undefined);
+
+    const runWith = async (model: string) => {
+      const message = await client.messages.create({
+        model, max_tokens: maxTokens, messages: [{ role: "user", content }],
+      });
+      return message.content
+        .filter((block): block is Anthropic.TextBlock => block.type === "text")
+        .map((b) => b.text).join("").trim();
+    };
+
+    // Build a usage-status payload for the client to update its UI without
+    // a follow-up probe.
+    async function buildResponseMeta() {
+      const meta: Record<string, unknown> = { signedIn: !!userId };
+      if (userId) {
+        const u = await checkUserRateLimit(userId);
+        meta.hourlyRemaining = u.hourlyRemaining;
+        meta.dailyRemaining = u.dailyRemaining;
+        const jc = await checkJournalCreationLimit(userId);
+        meta.journalsUsed = jc.used;
+        meta.journalsRemaining = jc.remaining;
+        if (journalId) {
+          const r = await checkJournalRewriteLimit(journalId);
+          meta.journalRewritesUsed = r.used;
+          meta.journalRewritesRemaining = r.remaining;
+          meta.cooldownActive = r.cooldownActive;
+          meta.cooldownRemainingSeconds = r.cooldownResetInSeconds;
+        }
+      }
+      return meta;
+    }
+
     try {
-      text = await runWith(PRIMARY_MODEL);
-    } catch (e: unknown) {
-      const status = (e as { status?: number }).status;
-      if (status === 529 || status === 429) {
-        console.warn(`Primary model ${PRIMARY_MODEL} unavailable (${status}), falling back to ${FALLBACK_MODEL}`);
-        text = await runWith(FALLBACK_MODEL);
-        model = FALLBACK_MODEL;
-        fallback = true;
-      } else {
-        throw e;
+      let text = "";
+      let model = PRIMARY_MODEL;
+      let fallback = false;
+      try {
+        text = await runWith(PRIMARY_MODEL);
+      } catch (e: unknown) {
+        const status = (e as { status?: number }).status;
+        if (status === 529 || status === 429) {
+          console.warn(`Primary model ${PRIMARY_MODEL} unavailable (${status}), falling back to ${FALLBACK_MODEL}`);
+          text = await runWith(FALLBACK_MODEL);
+          model = FALLBACK_MODEL;
+          fallback = true;
+        } else {
+          throw e;
+        }
       }
-    }
 
-    if (userId && record) {
-      await recordUsage(userId, actionType, journalId);
-    } else if (!userId) {
-      recordIpUsage(getClientIp(req));
-    }
+      if (userId && record) {
+        await recordUsage(userId, actionType, journalId);
+      } else if (!userId) {
+        recordIpUsage(getClientIp(req));
+      }
 
-    const rate_limit = await buildResponseMeta();
-    return Response.json({ text, model, ...(fallback ? { fallback: true } : {}), rate_limit });
-  } catch (e) {
-    console.error("API generate error:", e instanceof Error ? e.message : "unknown");
-    return Response.json({ text: "", error: "Generation failed" }, { status: 500 });
-  }
-}
+      const rate_limit = await buildResponseMeta();
+      return Response.json({ text, model, ...(fallback ? { fallback: true } : {}), rate_limit });
+    } catch (e) {
+      console.error("API generate error:", e instanceof Error ? e.message : "unknown");
+      return apiError(500, "generation_failed", "Generation failed");
+    }
+  },
+  { required: false },
+);

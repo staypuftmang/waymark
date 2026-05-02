@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
+import { apiError, parseBody, withAuth, z } from "@/app/lib/api";
 
 const SLUG_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -54,43 +55,22 @@ async function generateUniqueSlug(): Promise<string> {
   throw new Error("Could not generate unique slug");
 }
 
-async function authedUserId(req: Request): Promise<string | null> {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
-  if (!auth || !auth.startsWith("Bearer ")) return null;
-  const token = auth.slice(7).trim();
-  if (!token) return null;
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data?.user) return null;
-  return data.user.id;
-}
+const ShareBodySchema = z.object({
+  journalId: z.string().min(1),
+  action: z.enum(["publish", "unpublish"]),
+});
 
-interface ShareBody {
-  journalId?: string;
-  action?: "publish" | "unpublish";
-}
+export const POST = withAuth(async (req, { userId }) => {
+  // userId is non-null here — withAuth defaults to required.
+  const parsed = await parseBody(req, ShareBodySchema);
+  if (!parsed.ok) return parsed.response;
+  const { journalId, action } = parsed.data;
 
-export async function POST(req: Request) {
-  const userId = await authedUserId(req);
-  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
-
-  let body: ShareBody;
-  try {
-    body = (await req.json()) as ShareBody;
-  } catch {
-    return Response.json({ error: "invalid_body" }, { status: 400 });
-  }
-
-  const { journalId, action } = body;
-  if (!journalId || (action !== "publish" && action !== "unpublish")) {
-    return Response.json({ error: "invalid_params" }, { status: 400 });
-  }
-
-  const limit = checkShareLimit(userId);
+  const limit = checkShareLimit(userId!);
   if (!limit.allowed) {
-    return Response.json(
-      { error: "rate_limited", resetInSeconds: limit.resetInSeconds },
-      { status: 429 },
-    );
+    return apiError(429, "rate_limited", "Too many share actions — try again shortly.", {
+      resetInSeconds: limit.resetInSeconds,
+    });
   }
 
   const { data: journal, error: loadErr } = await supabaseAdmin
@@ -99,10 +79,10 @@ export async function POST(req: Request) {
     .eq("id", journalId)
     .maybeSingle();
   if (loadErr || !journal) {
-    return Response.json({ error: "not_found" }, { status: 404 });
+    return apiError(404, "not_found", "Journal not found.");
   }
   if (journal.user_id !== userId) {
-    return Response.json({ error: "forbidden" }, { status: 403 });
+    return apiError(403, "forbidden", "You don't own this journal.");
   }
 
   if (action === "publish") {
@@ -116,7 +96,7 @@ export async function POST(req: Request) {
       })
       .eq("id", journalId);
     if (updErr) {
-      return Response.json({ error: "update_failed" }, { status: 500 });
+      return apiError(500, "update_failed", "Failed to publish journal.");
     }
     revalidatePath(`/j/${slug}`);
     return Response.json({ slug, isPublic: true });
@@ -128,29 +108,29 @@ export async function POST(req: Request) {
     .update({ is_public: false })
     .eq("id", journalId);
   if (updErr) {
-    return Response.json({ error: "update_failed" }, { status: 500 });
+    return apiError(500, "update_failed", "Failed to unpublish journal.");
   }
   if (journal.share_slug) revalidatePath(`/j/${journal.share_slug}`);
   return Response.json({ slug: journal.share_slug, isPublic: false });
-}
+});
 
-export async function GET(req: Request) {
-  const userId = await authedUserId(req);
-  if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
+export const GET = withAuth(async (req, { userId }) => {
   const url = new URL(req.url);
   const journalId = url.searchParams.get("journalId");
-  if (!journalId) return Response.json({ error: "invalid_params" }, { status: 400 });
+  if (!journalId) {
+    return apiError(400, "invalid_params", "journalId query parameter is required.");
+  }
 
   const { data: journal, error } = await supabaseAdmin
     .from("journals")
     .select("id, user_id, share_slug, is_public")
     .eq("id", journalId)
     .maybeSingle();
-  if (error || !journal) return Response.json({ error: "not_found" }, { status: 404 });
-  if (journal.user_id !== userId) return Response.json({ error: "forbidden" }, { status: 403 });
+  if (error || !journal) return apiError(404, "not_found", "Journal not found.");
+  if (journal.user_id !== userId) return apiError(403, "forbidden", "You don't own this journal.");
 
   return Response.json({
     slug: journal.share_slug,
     isPublic: !!journal.is_public,
   });
-}
+});
