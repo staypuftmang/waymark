@@ -5,7 +5,11 @@ import { track } from "@vercel/analytics";
 import { Photo, LengthKey } from "@/app/lib/types";
 import { cleanJson, LE, formatDate } from "@/app/lib/constants";
 import { aiCall } from "@/app/lib/ai";
-import { batchRewritePrompt } from "@/app/lib/prompts";
+import {
+  batchRewritePrompt,
+  PREVIOUS_ENTRY_WINDOW,
+  type PreviousEntry,
+} from "@/app/lib/prompts";
 import { useUnloadGuard } from "@/app/lib/useUnloadGuard";
 import { useJournal } from "@/app/context/JournalContext";
 import { Button, Pill, PillGroup } from "./ui";
@@ -89,7 +93,7 @@ export default function RewriteAll({
     const eligibleCount = photos.filter((p) => p.caption || p.notes || p.aiCaption || p.aiNotes).length;
     track("ai_generated", { mode: "rewrite_all", photoCount: eligibleCount, wordStyle: ws, visualStyle: vk });
     const res: Record<number, StagedResult> = {};
-    const previousOutputs: string[] = [];
+    const previousEntries: PreviousEntry[] = [];
 
     for (const p of photos) {
       if (cancelRef.current) break;
@@ -97,7 +101,7 @@ export default function RewriteAll({
       const notesText = p.aiNotes || p.notes;
       if (!capText && !notesText) continue;
 
-      const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousOutputs, len);
+      const prompt = batchRewritePrompt(ws, title, brief, dd, capText, notesText, previousEntries, len);
 
       const raw = await aiCall(prompt, p.src, { actionType: "rewrite_batch_photo", journalId });
       if (cancelRef.current) break;
@@ -105,7 +109,13 @@ export default function RewriteAll({
         try {
           const parsed = JSON.parse(cleanJson(raw));
           res[p.id] = parsed;
-          if (parsed.caption) previousOutputs.push(parsed.caption);
+          if (parsed.caption || parsed.paragraph) {
+            previousEntries.push({
+              caption: parsed.caption ?? "",
+              paragraph: parsed.paragraph ?? "",
+            });
+            if (previousEntries.length > PREVIOUS_ENTRY_WINDOW) previousEntries.shift();
+          }
         } catch (e) {
           console.error(e);
         }

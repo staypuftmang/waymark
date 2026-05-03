@@ -21,11 +21,61 @@ CRITICAL RULES:
 - The trip brief is BACKGROUND CONTEXT ONLY. Do NOT copy, quote, paraphrase, or closely echo any part of it. Write completely original content grounded in what the photo shows.
 - Each photo entry must be unique. Do not repeat phrases, imagery, or sentence structures you've already used for other photos in this journal.
 - Write as if you are the traveler recounting this specific moment. Be concrete and sensory — what you saw, heard, smelled, tasted, felt.
-- Avoid these overused phrases: ${BANNED_PHRASES.map((p) => `"${p}"`).join(", ")}`;
+- Avoid these overused phrases: ${BANNED_PHRASES.map((p) => `"${p}"`).join(", ")}
+
+JOURNAL CONSISTENCY (when previous entries are provided):
+- Maintain the SAME narrative voice and tense across every entry — pick a tense in entry one and stay there.
+- Never re-use distinctive descriptive phrases from earlier entries. If photo 1 used "golden light," photo 3 must find a fresh way to describe similar lighting.
+- Build a narrative arc across the journal — early entries set the scene, middle entries explore and deepen, final entries reflect or close the loop.
+- When a connection between moments feels natural, reference it (e.g. "the same family we met at the market," "unlike the chaos of the morning") — but only if it genuinely fits this photo.`;
 }
 
 function truncateBrief(brief: string): string {
   return brief.length > 200 ? brief.substring(0, 200) + "..." : brief;
+}
+
+/**
+ * One previous entry in the rolling consistency window. Caption + an
+ * excerpt of the paragraph (the call site truncates to ~50 words to keep
+ * the prompt cheap; ~90 tokens per entry, ~270 tokens for a full window).
+ */
+export interface PreviousEntry {
+  caption: string;
+  paragraph: string;
+}
+
+/** Cap the rolling window — full journal history would blow up token cost
+ * for long journals without measurable consistency gain. */
+export const PREVIOUS_ENTRY_WINDOW = 3;
+
+const EXCERPT_WORDS = 50;
+
+function excerptParagraph(paragraph: string): string {
+  if (!paragraph) return "";
+  const words = paragraph.trim().split(/\s+/);
+  if (words.length <= EXCERPT_WORDS) return paragraph.trim();
+  return words.slice(0, EXCERPT_WORDS).join(" ") + "…";
+}
+
+/**
+ * Render the rolling-window block for the prompt. Numbered relatively
+ * ("Photo 1", "Photo 2") rather than by absolute index — the AI only
+ * needs to see them as "the last few entries" to anchor its voice.
+ */
+function previousEntriesBlock(entries: PreviousEntry[]): string {
+  if (entries.length === 0) return "";
+  const lines = entries.map((e, i) => {
+    const n = i + 1;
+    const caption = e.caption?.trim() ?? "";
+    const excerpt = excerptParagraph(e.paragraph ?? "");
+    const captionLine = `Photo ${n} caption: ${caption ? `"${caption}"` : "(none)"}`;
+    const excerptLine = excerpt ? `Photo ${n} excerpt: "${excerpt}"` : "";
+    return excerptLine ? `${captionLine}\n${excerptLine}` : captionLine;
+  });
+  return `\nPREVIOUS ENTRIES IN THIS JOURNAL (maintain consistent voice, avoid repeating phrases or observations from these):
+
+${lines.join("\n\n")}
+`;
 }
 
 const VOICE_INSTRUCTIONS: Record<WordStyleKey, string> = {
@@ -81,7 +131,7 @@ export function quickCreatePrompt(
   dates: string,
   index: number,
   total: number,
-  previousCaptions: string[],
+  previousEntries: PreviousEntry[],
   len: LengthKey = "standard",
 ): string {
   const aspects = [
@@ -102,11 +152,7 @@ export function quickCreatePrompt(
   else if (index === total - 1) arc = "the final moment — departure, last looks, what you carry home";
   else if (index === total - 2) arc = "nearing the end — bittersweet, savoring the last days";
 
-  const prevBlock = previousCaptions.length > 0
-    ? `\nPREVIOUS CAPTIONS ALREADY WRITTEN (you MUST write something completely different — different subject, different imagery, different sentence structure):
-${previousCaptions.map((c, i) => `  Photo ${i + 1}: "${c}"`).join("\n")}
-`
-    : "";
+  const prevBlock = previousEntriesBlock(previousEntries);
 
   const notesField = len === "brief"
     ? `"notes": "" (empty string — Brief length skips the pull quote)`
@@ -230,12 +276,10 @@ export function batchRewritePrompt(
   dates: string,
   caption: string,
   notes: string,
-  previousOutputs: string[],
+  previousEntries: PreviousEntry[],
   len: LengthKey = "standard",
 ): string {
-  const prevCtx = previousOutputs.length > 0
-    ? `\nALREADY WRITTEN (avoid similar themes, phrases, or imagery):\n${previousOutputs.map((o, i) => `Photo ${i + 1}: "${o}"`).join("\n")}\n`
-    : "";
+  const prevCtx = previousEntriesBlock(previousEntries);
 
   const notesField = len === "brief"
     ? `"notes": "" (empty string — Brief length skips the pull quote)`

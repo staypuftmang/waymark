@@ -4,7 +4,12 @@ import { useCallback, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
 import { useJournal } from "./JournalContext";
 import { aiCall } from "@/app/lib/ai";
-import { batchRewritePrompt, quickCreatePrompt } from "@/app/lib/prompts";
+import {
+  batchRewritePrompt,
+  quickCreatePrompt,
+  PREVIOUS_ENTRY_WINDOW,
+  type PreviousEntry,
+} from "@/app/lib/prompts";
 import { cleanJson, formatDate } from "@/app/lib/constants";
 
 export interface GenerationResult {
@@ -91,9 +96,15 @@ export function useJournalGeneration(): JournalGenerationApi {
         visualStyle: vk,
       });
 
-      const previousCaptions: string[] = photos
-        .map((p) => p.aiCaption)
-        .filter((c): c is string => !!c);
+      // Rolling window of completed entries (caption + paragraph excerpt).
+      // Seeded from any photos that already have AI content so an Update
+      // Journal run on a partially-generated journal still gets coherence
+      // context for the new photos. Capped at PREVIOUS_ENTRY_WINDOW so the
+      // prompt token cost stays bounded.
+      const previousEntries: PreviousEntry[] = photos
+        .filter((p) => p.aiCaption || p.aiParagraph)
+        .map((p) => ({ caption: p.aiCaption || "", paragraph: p.aiParagraph || "" }))
+        .slice(-PREVIOUS_ENTRY_WINDOW);
 
       const isFreshJournal = !hasAnyAi;
       let firstCallSent = false;
@@ -114,7 +125,7 @@ export function useJournalGeneration(): JournalGenerationApi {
           dateDisplay,
           fullIdx >= 0 ? fullIdx : i,
           photos.length,
-          previousCaptions,
+          previousEntries,
           len,
         );
         let opts: Parameters<typeof aiCall>[2];
@@ -133,13 +144,16 @@ export function useJournalGeneration(): JournalGenerationApi {
             const obj = JSON.parse(cleanJson(raw));
             if (obj.caption) {
               dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiCaption", value: obj.caption });
-              previousCaptions.push(obj.caption);
             }
             if (obj.notes) {
               dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiNotes", value: obj.notes });
             }
             if (obj.paragraph) {
               dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiParagraph", value: obj.paragraph });
+            }
+            if (obj.caption || obj.paragraph) {
+              previousEntries.push({ caption: obj.caption ?? "", paragraph: obj.paragraph ?? "" });
+              if (previousEntries.length > PREVIOUS_ENTRY_WINDOW) previousEntries.shift();
             }
           } catch (e) {
             console.error(e);
@@ -178,7 +192,7 @@ export function useJournalGeneration(): JournalGenerationApi {
         visualStyle: vk,
       });
 
-      const previousOutputs: string[] = [];
+      const previousEntries: PreviousEntry[] = [];
       let processed = 0;
 
       for (let i = 0; i < targets.length; i++) {
@@ -197,7 +211,7 @@ export function useJournalGeneration(): JournalGenerationApi {
           dateDisplay,
           capText,
           notesText,
-          previousOutputs,
+          previousEntries,
           len,
         );
         const raw = await aiCall(prompt, p.src, {
@@ -210,12 +224,15 @@ export function useJournalGeneration(): JournalGenerationApi {
             const obj = JSON.parse(cleanJson(raw));
             if (obj.caption) {
               dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiCaption", value: obj.caption });
-              previousOutputs.push(obj.caption);
             }
             // Brief asks for empty notes — clear any prior pull quote.
             dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiNotes", value: obj.notes ?? "" });
             if (obj.paragraph) {
               dispatch({ type: "UPDATE_PHOTO_FIELD", id: p.id, field: "aiParagraph", value: obj.paragraph });
+            }
+            if (obj.caption || obj.paragraph) {
+              previousEntries.push({ caption: obj.caption ?? "", paragraph: obj.paragraph ?? "" });
+              if (previousEntries.length > PREVIOUS_ENTRY_WINDOW) previousEntries.shift();
             }
           } catch (e) {
             console.error(e);
