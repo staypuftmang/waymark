@@ -208,12 +208,28 @@ export function useJournalGeneration(): JournalGenerationApi {
           record: false,
         });
         if (raw) {
+          // Colophon parsing is best-effort. The narrative loop has
+          // already succeeded by the time we get here, so a malformed
+          // response (markdown fences the cleaner missed, partial
+          // truncation, surprise prose) must NOT throw out the whole
+          // generation. Log the raw response so we can iterate the
+          // prompt if the failure is consistent.
           try {
-            const obj = JSON.parse(cleanJson(raw)) as {
+            const cleaned = cleanJson(raw);
+            let obj: {
               pullQuote?: string;
               closingLine?: string;
               items?: Array<{ label?: string; value?: string; syncTo?: string }>;
             };
+            try {
+              obj = JSON.parse(cleaned);
+            } catch (parseErr) {
+              console.warn(
+                "Colophon JSON parse failed — skipping colophon for this generation.",
+                { error: parseErr, cleaned, raw },
+              );
+              return { generated: processed, cancelled };
+            }
             const items: ColophonItem[] = (obj.items ?? [])
               .slice(0, 7)
               .map((it, i) => ({
@@ -234,7 +250,11 @@ export function useJournalGeneration(): JournalGenerationApi {
             };
             dispatch({ type: "SET_COLOPHON", colophon });
           } catch (e) {
-            console.warn("Colophon parse failed:", e);
+            // Anything past the JSON parse — defensive backstop. Don't
+            // surface to the user; the journal narrative is already
+            // saved, the colophon is just absent until they re-run
+            // generation later.
+            console.warn("Colophon assembly failed:", e);
           }
         }
       }

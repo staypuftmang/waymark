@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type Dispatch } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -26,127 +26,29 @@ import { COLOPHON_MAX_ITEMS, type ColophonItem } from "@/app/lib/types";
 import { formatDate } from "@/app/lib/constants";
 import DatePicker from "./DatePicker";
 
-/**
- * Editor card for the trip-details colophon. Lives at the bottom of the
- * Review & Refine page (Quick step 10) and Photos & Notes (Full step 1).
- * Pulls the colophon from journal context and dispatches edits back.
- * Disabled state collapses to just the title + Enable toggle.
- *
- * Date sync: rows tagged syncTo: "dates" render the same DatePicker used
- * at the start of the journal-creation flow, bound directly to the trip's
- * start/end dates. There's no separate "value" string for those rows —
- * the calendar is the only edit surface, so the action is intentional
- * and the cover updates automatically through the existing date pipeline.
- */
-export default function ColophonEditor() {
-  const { state, dispatch } = useJournal();
-  const colophon = state.colophon;
+// IMPORTANT: Toggle / GripDots / RowBody / SortableRow live at module
+// scope (not inside the parent component). Defining them inline above
+// produces a fresh function reference on every render, which React
+// treats as a different component type — every reducer dispatch would
+// unmount and remount the entire row tree, including the DatePicker
+// inside the date row. That blew away DatePicker's internal `sel`
+// state after the first click, so the picker reset to "select start"
+// before the user could place an end date. Hoisting fixes that.
 
-  if (!colophon) return null;
+interface ToggleProps {
+  on: boolean;
+  onChange: () => void;
+  ariaLabel: string;
+}
 
-  const sortedItems = [...colophon.items].sort((a, b) => a.order - b.order);
-  const atCap = sortedItems.length >= COLOPHON_MAX_ITEMS;
-
-  const labelStyle: React.CSSProperties = {
-    display: "block",
-    fontSize: 10,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    color: "var(--color-stone)",
-    marginBottom: 5,
-    fontFamily: "var(--font-body)",
-  };
-
-  const inputStyle: React.CSSProperties = {
-    fontFamily: "var(--font-body)",
-    fontSize: 14,
-    color: "var(--color-ink)",
-    background: "transparent",
-    border: "1px solid var(--color-border)",
-    borderRadius: 4,
-    padding: "7px 10px",
-    width: "100%",
-    boxSizing: "border-box",
-    outline: "none",
-  };
-
-  const textareaStyle: React.CSSProperties = {
-    ...inputStyle,
-    padding: "8px 10px",
-    resize: "vertical",
-    minHeight: 60,
-    lineHeight: 1.6,
-  };
-
-  /** Format a (start, end) tuple the same way the cover does, so the
-   *  rendered colophon and the cover always read the same range. */
-  const formatRange = (start: Date | null, end: Date | null): string => {
-    if (!start) return "";
-    return end ? `${formatDate(start)} — ${formatDate(end)}` : formatDate(start);
-  };
-
-  /** Mirror state.startDate/endDate into the syncTo: "dates" row's stored
-   *  value whenever the trip dates change. A useEffect (rather than
-   *  dispatching from the picker callbacks) avoids the stale-closure bug
-   *  that surfaced when DatePicker.pick() chains onStartChange +
-   *  onEndChange in a single tick: each chained callback would have read
-   *  state.startDate/endDate from the previous render and clobbered the
-   *  field the other callback just set. By syncing in a render-after
-   *  effect we read the final state once, no closures involved. */
-  useEffect(() => {
-    if (!colophon) return;
-    const dateRow = colophon.items.find((it) => it.syncTo === "dates");
-    if (!dateRow) return;
-    const formatted = formatRange(state.startDate, state.endDate);
-    if (dateRow.value !== formatted) {
-      dispatch({
-        type: "UPDATE_COLOPHON_ITEM",
-        id: dateRow.id,
-        field: "value",
-        value: formatted,
-      });
-    }
-    // colophon.items reference changes on every reducer update; using the
-    // primitive dates as deps is enough to trigger the sync without
-    // looping when this effect re-dispatches UPDATE_COLOPHON_ITEM.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.startDate, state.endDate]);
-
-  // ── Drag-reorder ────────────────────────────────────────────────────────
-  // Identical sensor config to SortablePhotoList so touch + mouse behave
-  // the same way across the app: pointer needs 5px drift before lift,
-  // touch needs a 200ms hold so a quick tap on the value field doesn't
-  // start a drag by accident.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
-
-  const handleDragStart = (e: DragStartEvent) => setActiveDragId(String(e.active.id));
-
-  const handleDragEnd = (e: DragEndEvent) => {
-    setActiveDragId(null);
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const oldIndex = sortedItems.findIndex((it) => it.id === active.id);
-    const newIndex = sortedItems.findIndex((it) => it.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    const next = arrayMove(sortedItems, oldIndex, newIndex);
-    dispatch({ type: "REORDER_COLOPHON_ITEMS", ids: next.map((it) => it.id) });
-  };
-
-  const handleDragCancel = () => setActiveDragId(null);
-
-  const activeRow = activeDragId ? sortedItems.find((it) => it.id === activeDragId) ?? null : null;
-
-  const Toggle = ({ on, onChange, ariaLabel }: { on: boolean; onChange: () => void; ariaLabel: string }) => (
+function Toggle({ on, onChange, ariaLabel }: ToggleProps) {
+  return (
     <button
       type="button"
-      onClick={onChange}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
       aria-label={ariaLabel}
       aria-pressed={on}
       className="cursor-pointer border-none p-0"
@@ -176,33 +78,19 @@ export default function ColophonEditor() {
       />
     </button>
   );
+}
 
-  const headerStyle: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: colophon.enabled ? 20 : 0,
-  };
+interface GripDotsProps {
+  handleProps?: Record<string, unknown>;
+  active?: boolean;
+  dimmed?: boolean;
+}
 
-  const titleStyle: React.CSSProperties = {
-    fontFamily: "var(--font-title)",
-    fontSize: 22,
-    fontWeight: 300,
-    color: "var(--color-ink)",
-  };
-
-  /** Grip-dots drag handle. Listeners + attributes are spread onto the
-   * outer element so only this widget activates the drag — taps on the
-   * toggle, inputs, or remove button never start a reorder. */
-  const GripDots = ({
-    handleProps,
-    active,
-    dimmed,
-  }: {
-    handleProps?: Record<string, unknown>;
-    active?: boolean;
-    dimmed?: boolean;
-  }) => (
+/** Grip-dots drag handle. Listeners + attributes are spread onto the
+ * outer element so only this widget activates the drag — taps on the
+ * toggle, inputs, or remove button never start a reorder. */
+function GripDots({ handleProps, active, dimmed }: GripDotsProps) {
+  return (
     <div
       {...(handleProps ?? {})}
       role="button"
@@ -248,10 +136,51 @@ export default function ColophonEditor() {
       ))}
     </div>
   );
+}
 
-  /** The label/value/toggle/remove block that's identical between a
-   * static row and the row currently being dragged in the overlay. */
-  const RowBody = ({ row }: { row: ColophonItem }) => (
+const labelStyle: CSSProperties = {
+  display: "block",
+  fontSize: 10,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: 1.5,
+  color: "var(--color-stone)",
+  marginBottom: 5,
+  fontFamily: "var(--font-body)",
+};
+
+const inputStyle: CSSProperties = {
+  fontFamily: "var(--font-body)",
+  fontSize: 14,
+  color: "var(--color-ink)",
+  background: "transparent",
+  border: "1px solid var(--color-border)",
+  borderRadius: 4,
+  padding: "7px 10px",
+  width: "100%",
+  boxSizing: "border-box",
+  outline: "none",
+};
+
+const textareaStyle: CSSProperties = {
+  ...inputStyle,
+  padding: "8px 10px",
+  resize: "vertical",
+  minHeight: 60,
+  lineHeight: 1.6,
+};
+
+interface RowBodyProps {
+  row: ColophonItem;
+  startDate: Date | null;
+  endDate: Date | null;
+  dispatch: Dispatch<unknown> & ((action: unknown) => void);
+}
+
+/** The label/value/toggle/remove block. Same JSX whether the row is
+ * static in the list or being dragged in the overlay. */
+function RowBody({ row, startDate, endDate, dispatch }: RowBodyProps) {
+  return (
     <>
       <div style={{ paddingTop: 22, flexShrink: 0 }}>
         <Toggle
@@ -281,16 +210,16 @@ export default function ColophonEditor() {
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>Value</label>
           {row.syncTo === "dates" ? (
-            // Same DatePicker as the journal-creation flow. Callbacks
-            // dispatch ONLY the field that changed — DatePicker.pick()
-            // sometimes chains onStartChange + onEndChange in one tick,
-            // and reading the unchanged field from a closure here would
-            // overwrite the just-dispatched value with stale state.
-            // The colophon row's stored value re-syncs via the useEffect
-            // above whenever startDate/endDate land.
+            // Same DatePicker as the journal-creation flow — reused as
+            // a stable mounted instance (this component is at module
+            // scope, so React doesn't remount on every parent
+            // dispatch). Each callback dispatches only the field it
+            // owns; the syncTo: "dates" row's stored text value is
+            // re-derived from state.startDate/endDate via a useEffect
+            // in the parent.
             <DatePicker
-              startDate={state.startDate}
-              endDate={state.endDate}
+              startDate={startDate}
+              endDate={endDate}
               onStartChange={(d) => dispatch({ type: "SET_START_DATE", value: d })}
               onEndChange={(d) => dispatch({ type: "SET_END_DATE", value: d })}
             />
@@ -327,44 +256,132 @@ export default function ColophonEditor() {
       </button>
     </>
   );
+}
 
-  /** Sortable wrapper. Spread setNodeRef on the outer div for positioning
-   * and wire setActivatorNodeRef + listeners ONLY to the GripDots so the
-   * inputs and toggle stay clickable. The wrapper also reserves the
-   * dragging slot's space (opacity 0.4) while the overlay carries the
-   * visual ghost above the list. */
-  const SortableRow = ({ row, isDragging }: { row: ColophonItem; isDragging: boolean }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      setActivatorNodeRef,
-      transform,
-      transition,
-    } = useSortable({ id: row.id });
+interface SortableRowProps extends RowBodyProps {
+  isDragging: boolean;
+}
 
-    const style: CSSProperties = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.4 : row.visible ? 1 : 0.4,
-      display: "flex",
-      gap: 8,
-      alignItems: "flex-start",
-    };
+/** Sortable wrapper. Spread setNodeRef on the outer div for positioning,
+ * setActivatorNodeRef + listeners ONLY on the GripDots so the inputs
+ * and toggle stay clickable. */
+function SortableRow({ row, isDragging, startDate, endDate, dispatch }: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: row.id });
 
-    const handleProps = {
-      ref: setActivatorNodeRef,
-      ...attributes,
-      ...listeners,
-    } as Record<string, unknown>;
-
-    return (
-      <div ref={setNodeRef} className="wm-colophon-row-edit" style={style}>
-        <GripDots handleProps={handleProps} dimmed={!row.visible} />
-        <RowBody row={row} />
-      </div>
-    );
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : row.visible ? 1 : 0.4,
+    display: "flex",
+    gap: 8,
+    alignItems: "flex-start",
   };
+
+  const handleProps = {
+    ref: setActivatorNodeRef,
+    ...attributes,
+    ...listeners,
+  } as Record<string, unknown>;
+
+  return (
+    <div ref={setNodeRef} className="wm-colophon-row-edit" style={style}>
+      <GripDots handleProps={handleProps} dimmed={!row.visible} />
+      <RowBody row={row} startDate={startDate} endDate={endDate} dispatch={dispatch} />
+    </div>
+  );
+}
+
+const headerStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+};
+
+const titleStyle: CSSProperties = {
+  fontFamily: "var(--font-title)",
+  fontSize: 22,
+  fontWeight: 300,
+  color: "var(--color-ink)",
+};
+
+/**
+ * Editor card for the trip-details colophon. Lives at the bottom of the
+ * Review & Refine page (Quick step 10) and Photos & Notes (Full step 1).
+ * Pulls the colophon from journal context and dispatches edits back.
+ * Disabled state collapses to just the title + Enable toggle.
+ */
+export default function ColophonEditor() {
+  const { state, dispatch } = useJournal();
+  const colophon = state.colophon;
+
+  // Drag-reorder state — declared before the early return so hook order
+  // stays stable when the colophon arrives mid-session.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  // Mirror state.startDate/endDate into the syncTo: "dates" row's stored
+  // value whenever the trip dates change. Running in a render-after
+  // effect (rather than dispatching from the picker callbacks) avoids
+  // a stale-closure bug where DatePicker.pick chains both onStartChange
+  // and onEndChange in a single tick. Useful for any path that mutates
+  // dates — picker, manual entry, anywhere in the app.
+  useEffect(() => {
+    if (!colophon) return;
+    const dateRow = colophon.items.find((it) => it.syncTo === "dates");
+    if (!dateRow) return;
+    const formatted = !state.startDate
+      ? ""
+      : state.endDate
+        ? `${formatDate(state.startDate)} — ${formatDate(state.endDate)}`
+        : formatDate(state.startDate);
+    if (dateRow.value !== formatted) {
+      dispatch({
+        type: "UPDATE_COLOPHON_ITEM",
+        id: dateRow.id,
+        field: "value",
+        value: formatted,
+      });
+    }
+    // colophon.items reference changes on every reducer update; using the
+    // primitive dates as deps is enough to trigger the sync without
+    // looping when this effect re-dispatches UPDATE_COLOPHON_ITEM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.startDate, state.endDate]);
+
+  if (!colophon) return null;
+
+  const sortedItems = [...colophon.items].sort((a, b) => a.order - b.order);
+  const atCap = sortedItems.length >= COLOPHON_MAX_ITEMS;
+
+  const handleDragStart = (e: DragStartEvent) => setActiveDragId(String(e.active.id));
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedItems.findIndex((it) => it.id === active.id);
+    const newIndex = sortedItems.findIndex((it) => it.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(sortedItems, oldIndex, newIndex);
+    dispatch({ type: "REORDER_COLOPHON_ITEMS", ids: next.map((it) => it.id) });
+  };
+
+  const handleDragCancel = () => setActiveDragId(null);
+
+  const activeRow = activeDragId ? sortedItems.find((it) => it.id === activeDragId) ?? null : null;
+
+  const toggleEnabled = () => dispatch({ type: "SET_COLOPHON_ENABLED", enabled: !colophon.enabled });
 
   return (
     <>
@@ -377,12 +394,18 @@ export default function ColophonEditor() {
           fontFamily: "var(--font-body)",
         }}
       >
-        <div style={headerStyle}>
+        <div style={{ ...headerStyle, marginBottom: colophon.enabled ? 20 : 0 }}>
           <span style={titleStyle}>Trip details</span>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_COLOPHON_ENABLED", enabled: !colophon.enabled })}
-            className="cursor-pointer border-none bg-transparent flex items-center"
+          {/* Outer wrapper is a div + onClick (not a <button>) because the
+              Toggle inside is itself a <button>; nesting interactive
+              <button> elements is invalid HTML and triggers hydration
+              warnings. The label and the Toggle each handle the click;
+              Toggle stops propagation so we don't fire the dispatch
+              twice when the user taps the switch directly. */}
+          <div
+            role="presentation"
+            onClick={toggleEnabled}
+            className="cursor-pointer flex items-center"
             style={{ gap: 8, padding: 0 }}
           >
             <span style={{ fontSize: 12, color: "var(--color-stone)" }}>
@@ -390,10 +413,10 @@ export default function ColophonEditor() {
             </span>
             <Toggle
               on={colophon.enabled}
-              onChange={() => dispatch({ type: "SET_COLOPHON_ENABLED", enabled: !colophon.enabled })}
+              onChange={toggleEnabled}
               ariaLabel={colophon.enabled ? "Disable colophon" : "Enable colophon"}
             />
-          </button>
+          </div>
         </div>
 
         {colophon.enabled && (
@@ -423,6 +446,9 @@ export default function ColophonEditor() {
                       key={row.id}
                       row={row}
                       isDragging={activeDragId === row.id}
+                      startDate={state.startDate}
+                      endDate={state.endDate}
+                      dispatch={dispatch as Dispatch<unknown> & ((action: unknown) => void)}
                     />
                   ))}
                 </div>
@@ -447,7 +473,12 @@ export default function ColophonEditor() {
                     }}
                   >
                     <GripDots active />
-                    <RowBody row={activeRow} />
+                    <RowBody
+                      row={activeRow}
+                      startDate={state.startDate}
+                      endDate={state.endDate}
+                      dispatch={dispatch as Dispatch<unknown> & ((action: unknown) => void)}
+                    />
                   </div>
                 ) : null}
               </DragOverlay>
@@ -489,7 +520,6 @@ export default function ColophonEditor() {
           </>
         )}
       </div>
-
 
       <style jsx>{`
         @media (max-width: 500px) {

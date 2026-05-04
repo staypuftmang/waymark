@@ -143,8 +143,37 @@ export function formatDate(d: Date | null): string {
   return MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
 }
 
+/**
+ * Trim an LLM response down to the JSON payload it (hopefully) contains.
+ * Models occasionally wrap output in ```json fences, prefix with prose
+ * ("Here's the JSON:"), or trail off with a trailing comment. This:
+ *   1. Strips ```json / ``` fences anywhere in the string.
+ *   2. Truncates everything before the first { or [.
+ *   3. Truncates everything after the matching last } or ].
+ *
+ * The first/last brace heuristic isn't perfect — if the model emits
+ * two valid JSON blocks separated by prose, we'd over-include — but
+ * for the single-document responses Waymark uses, it reliably rescues
+ * fence-wrapped or commentary-prefixed output.
+ */
 export function cleanJson(raw: string): string {
-  return raw.replace(/```json/g, "").replace(/```/g, "").trim();
+  let s = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  // Pick whichever opening token comes first; the matching closing
+  // token is the last one of the same family.
+  const firstBrace = s.indexOf("{");
+  const firstBracket = s.indexOf("[");
+  const firstIdx =
+    firstBrace === -1 ? firstBracket
+      : firstBracket === -1 ? firstBrace
+      : Math.min(firstBrace, firstBracket);
+  if (firstIdx > 0) s = s.slice(firstIdx);
+  const open = s[0];
+  if (open === "{" || open === "[") {
+    const close = open === "{" ? "}" : "]";
+    const lastIdx = s.lastIndexOf(close);
+    if (lastIdx >= 0 && lastIdx < s.length - 1) s = s.slice(0, lastIdx + 1);
+  }
+  return s.trim();
 }
 
 export { MONTHS };
