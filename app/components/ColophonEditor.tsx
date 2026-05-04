@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -86,21 +86,32 @@ export default function ColophonEditor() {
     return end ? `${formatDate(start)} — ${formatDate(end)}` : formatDate(start);
   };
 
-  /** Atomically write a new date range to journal state AND to the
-   *  date row's stored `value`. Keeping value in lockstep means
-   *  ColophonRendered doesn't need any conditional logic — every
-   *  surface that reads the persisted colophon picks up the new range
-   *  for free. */
-  const writeDateRange = (rowId: string, start: Date | null, end: Date | null) => {
-    dispatch({ type: "SET_START_DATE", value: start });
-    dispatch({ type: "SET_END_DATE", value: end });
-    dispatch({
-      type: "UPDATE_COLOPHON_ITEM",
-      id: rowId,
-      field: "value",
-      value: formatRange(start, end),
-    });
-  };
+  /** Mirror state.startDate/endDate into the syncTo: "dates" row's stored
+   *  value whenever the trip dates change. A useEffect (rather than
+   *  dispatching from the picker callbacks) avoids the stale-closure bug
+   *  that surfaced when DatePicker.pick() chains onStartChange +
+   *  onEndChange in a single tick: each chained callback would have read
+   *  state.startDate/endDate from the previous render and clobbered the
+   *  field the other callback just set. By syncing in a render-after
+   *  effect we read the final state once, no closures involved. */
+  useEffect(() => {
+    if (!colophon) return;
+    const dateRow = colophon.items.find((it) => it.syncTo === "dates");
+    if (!dateRow) return;
+    const formatted = formatRange(state.startDate, state.endDate);
+    if (dateRow.value !== formatted) {
+      dispatch({
+        type: "UPDATE_COLOPHON_ITEM",
+        id: dateRow.id,
+        field: "value",
+        value: formatted,
+      });
+    }
+    // colophon.items reference changes on every reducer update; using the
+    // primitive dates as deps is enough to trigger the sync without
+    // looping when this effect re-dispatches UPDATE_COLOPHON_ITEM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.startDate, state.endDate]);
 
   // ── Drag-reorder ────────────────────────────────────────────────────────
   // Identical sensor config to SortablePhotoList so touch + mouse behave
@@ -270,16 +281,18 @@ export default function ColophonEditor() {
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>Value</label>
           {row.syncTo === "dates" ? (
-            // Calendar picker bound straight to the trip's start/end
-            // dates. writeDateRange keeps the row's stored value in
-            // lockstep with the new range so the rendered colophon picks
-            // up the change. The cover updates automatically through
-            // the same start/end pipeline.
+            // Same DatePicker as the journal-creation flow. Callbacks
+            // dispatch ONLY the field that changed — DatePicker.pick()
+            // sometimes chains onStartChange + onEndChange in one tick,
+            // and reading the unchanged field from a closure here would
+            // overwrite the just-dispatched value with stale state.
+            // The colophon row's stored value re-syncs via the useEffect
+            // above whenever startDate/endDate land.
             <DatePicker
               startDate={state.startDate}
               endDate={state.endDate}
-              onStartChange={(d) => writeDateRange(row.id, d, state.endDate)}
-              onEndChange={(d) => writeDateRange(row.id, state.startDate, d)}
+              onStartChange={(d) => dispatch({ type: "SET_START_DATE", value: d })}
+              onEndChange={(d) => dispatch({ type: "SET_END_DATE", value: d })}
             />
           ) : (
             <input
