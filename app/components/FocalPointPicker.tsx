@@ -8,11 +8,15 @@ import { Button } from "./ui";
 interface FocalPointPickerProps {
   src: string;
   initial: FocalPoint | undefined;
+  /** Which crop ratio the toggle starts on. Pass "cover" when launched
+   * from the cover thumbnail, "body" when launched from a body photo. */
+  initialMode?: CropMode;
   onApply: (next: FocalPoint | null) => void;
   onClose: () => void;
 }
 
 type CropMode = "cover" | "body";
+type CropAxis = "x" | "y" | "none";
 
 const COVER_RATIO = 16 / 9;
 const BODY_RATIO = 1; // square — matches the photo-management thumbnail
@@ -40,10 +44,11 @@ const DEFAULT_FOCAL: FocalPoint = { x: 50, y: 50 };
 export default function FocalPointPicker({
   src,
   initial,
+  initialMode = "body",
   onApply,
   onClose,
 }: FocalPointPickerProps) {
-  const [mode, setMode] = useState<CropMode>("body");
+  const [mode, setMode] = useState<CropMode>(initialMode);
   const [focal, setFocal] = useState<FocalPoint>(initial ?? DEFAULT_FOCAL);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -58,21 +63,37 @@ export default function FocalPointPicker({
 
   const ratio = mode === "cover" ? COVER_RATIO : BODY_RATIO;
 
-  /** Convert a pointer event on the stage div to a focal-point % pair. */
+  /** Which axis of the photo actually gets cropped at the current ratio.
+   *  Wider-than-target → vertical bands trimmed left/right → "x" axis.
+   *  Taller-than-target → horizontal bands trimmed top/bottom → "y" axis.
+   *  Same ratio → nothing to crop, picker is informational only. */
+  const cropAxis: CropAxis = useMemo(() => {
+    if (!imgSize) return "none";
+    const imgRatio = imgSize.w / imgSize.h;
+    if (Math.abs(imgRatio - ratio) < 0.001) return "none";
+    return imgRatio > ratio ? "x" : "y";
+  }, [imgSize, ratio]);
+
+  /** Convert a pointer event on the stage div to a focal-point % pair.
+   *  Only the cropped axis updates — the other axis preserves whatever
+   *  value the focal point already had, so toggling between body/cover
+   *  modes doesn't wipe a setting the user made on the other axis. */
   const pointToFocal = (e: PointerEvent | React.PointerEvent): FocalPoint | null => {
     const stage = stageRef.current;
     if (!stage) return null;
     const r = stage.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return null;
-    const x = ((e.clientX - r.left) / r.width) * 100;
-    const y = ((e.clientY - r.top) / r.height) * 100;
-    return {
-      x: Math.max(0, Math.min(100, x)),
-      y: Math.max(0, Math.min(100, y)),
-    };
+    const rawX = ((e.clientX - r.left) / r.width) * 100;
+    const rawY = ((e.clientY - r.top) / r.height) * 100;
+    const x = Math.max(0, Math.min(100, rawX));
+    const y = Math.max(0, Math.min(100, rawY));
+    if (cropAxis === "x") return { x, y: focal.y };
+    if (cropAxis === "y") return { x: focal.x, y };
+    return focal;
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (cropAxis === "none") return;
     e.preventDefault();
     e.stopPropagation();
     draggingRef.current = true;
@@ -203,78 +224,103 @@ export default function FocalPointPicker({
         </div>
 
         <div className="wm-focal-grid">
-          {/* Stage (full photo + dim overlay + bright crop window) */}
+          {/* Stage (full photo + bright crop window). The wrapper takes
+              the IMAGE'S natural aspect ratio so percentage-positioned
+              overlays line up with the rendered pixels — using object-fit
+              contain on the img would letterbox inside the box and the
+              overlay percentages would be relative to the box, not the
+              picture, throwing off the crop window. The maxWidth/maxHeight
+              constraints keep the stage from blowing past the modal. */}
           <div
-            ref={stageRef}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            className="wm-focal-stage"
+            className="wm-focal-stage-wrap"
             style={{
               position: "relative",
               width: "100%",
-              maxHeight: "60vh",
-              userSelect: "none",
-              touchAction: "none",
-              cursor: "crosshair",
-              background: "#000",
-              borderRadius: 6,
-              overflow: "hidden",
+              display: "flex",
+              justifyContent: "center",
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={src}
-              alt=""
-              draggable={false}
-              onLoad={(e) => {
-                const t = e.target as HTMLImageElement;
-                setImgSize({ w: t.naturalWidth, h: t.naturalHeight });
-              }}
+            <div
+              ref={stageRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              className="wm-focal-stage"
               style={{
-                display: "block",
-                width: "100%",
-                maxHeight: "60vh",
-                objectFit: "contain",
-                pointerEvents: "none",
+                position: "relative",
+                ...(imgSize
+                  ? {
+                      aspectRatio: `${imgSize.w} / ${imgSize.h}`,
+                      width: "100%",
+                      maxWidth: "100%",
+                      maxHeight: "60vh",
+                    }
+                  : { width: "100%", aspectRatio: "16 / 9" }),
+                userSelect: "none",
+                touchAction: "none",
+                cursor: cropAxis === "none" ? "default" : "crosshair",
+                background: "#000",
+                borderRadius: 6,
+                overflow: "hidden",
               }}
-            />
-            {/* The crop window stays bright; everything outside it is
-                dimmed via an outward box-shadow. One element, no compositing
-                hacks — the spread radius is large enough to cover any
-                practical container size. */}
-            {cropWindow && (
-              <div
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                draggable={false}
+                onLoad={(e) => {
+                  const t = e.target as HTMLImageElement;
+                  setImgSize({ w: t.naturalWidth, h: t.naturalHeight });
+                }}
                 style={{
-                  position: "absolute",
-                  left: `${cropWindow.leftPct}%`,
-                  top: `${cropWindow.topPct}%`,
-                  width: `${cropWindow.widthPct}%`,
-                  height: `${cropWindow.heightPct}%`,
-                  boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
-                  border: "2px solid #fff",
+                  display: "block",
+                  width: "100%",
+                  height: "100%",
+                  // No object-fit needed — the wrapper aspect ratio matches
+                  // the image, so the natural fit fills it cleanly.
                   pointerEvents: "none",
                 }}
               />
-            )}
-            {/* Focal-point reticle */}
-            <div
-              style={{
-                position: "absolute",
-                left: `${focal.x}%`,
-                top: `${focal.y}%`,
-                width: 18,
-                height: 18,
-                marginLeft: -9,
-                marginTop: -9,
-                borderRadius: "50%",
-                border: "2px solid #fff",
-                background: "rgba(0,0,0,0.4)",
-                boxShadow: "0 0 0 1px rgba(0,0,0,0.6)",
-                pointerEvents: "none",
-              }}
-            />
+              {/* The crop window stays bright; everything outside it is
+                  dimmed via an outward box-shadow. One element, no
+                  compositing hacks — the spread radius covers any
+                  practical container size. */}
+              {cropWindow && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: `${cropWindow.leftPct}%`,
+                    top: `${cropWindow.topPct}%`,
+                    width: `${cropWindow.widthPct}%`,
+                    height: `${cropWindow.heightPct}%`,
+                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                    border: "2px solid #fff",
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+              {/* Focal-point reticle. Position uses the locked axis
+                  values so the reticle sits on the slide line, not in
+                  some dead-zone the user can't reach by dragging. */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${cropAxis === "y" ? 50 : focal.x}%`,
+                  top: `${cropAxis === "x" ? 50 : focal.y}%`,
+                  width: 18,
+                  height: 18,
+                  marginLeft: -9,
+                  marginTop: -9,
+                  borderRadius: "50%",
+                  border: "2px solid #fff",
+                  background: "rgba(0,0,0,0.4)",
+                  boxShadow: "0 0 0 1px rgba(0,0,0,0.6)",
+                  pointerEvents: "none",
+                }}
+              />
+            </div>
           </div>
 
           {/* Live preview */}
