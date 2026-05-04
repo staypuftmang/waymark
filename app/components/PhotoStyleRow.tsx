@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Photo } from "@/app/lib/types";
+import { Photo, focalPointToObjectPosition } from "@/app/lib/types";
 import { aiCall } from "@/app/lib/ai";
 import { rewriteCaptionPrompt, rewriteNotesPrompt, rewriteParagraphPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
 import { useJournal } from "@/app/context/JournalContext";
@@ -177,6 +177,7 @@ export default function PhotoStyleRow({
             height: 48,
             borderRadius: 3,
             border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+            objectPosition: focalPointToObjectPosition(p.focalPoint),
           }}
           alt=""
         />

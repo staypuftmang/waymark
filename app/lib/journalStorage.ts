@@ -54,6 +54,10 @@ export interface JournalSummary {
   createdAt: string;
   updatedAt: string;
   coverPhotoSrc: string | null;
+  /** Focal point of the cover photo, if customised. NULL → render with
+   * default center. Lets the dashboard JournalCard apply object-position
+   * without re-fetching the photo row. */
+  coverFocalPoint: { x: number; y: number } | null;
   isPublic: boolean;
   shareSlug: string | null;
 }
@@ -66,6 +70,8 @@ export type PhotoTextFields = Partial<{
   ai_notes: string;
   ai_paragraph: string;
   is_cover: boolean;
+  focal_x: number | null;
+  focal_y: number | null;
 }>;
 
 interface JournalRow {
@@ -101,6 +107,8 @@ interface JournalPhotoRow {
   ai_paragraph: string | null;
   is_cover: boolean;
   photo_order: number;
+  focal_x: number | null;
+  focal_y: number | null;
 }
 
 export function journalToFields(d: JournalData) {
@@ -137,6 +145,8 @@ function photoInsertRow(journalId: string, photo: Photo, order: number, coverPho
     ai_notes: photo.aiNotes || "",
     ai_paragraph: photo.aiParagraph || "",
     is_cover: coverPhotoId != null && String(photo.id) === String(coverPhotoId),
+    focal_x: photo.focalPoint ? Math.round(photo.focalPoint.x) : null,
+    focal_y: photo.focalPoint ? Math.round(photo.focalPoint.y) : null,
   };
 }
 
@@ -327,6 +337,10 @@ export async function loadJournal(
     aiCaption: p.ai_caption ?? "",
     aiNotes: p.ai_notes ?? "",
     aiParagraph: p.ai_paragraph ?? "",
+    focalPoint:
+      p.focal_x != null && p.focal_y != null
+        ? { x: p.focal_x, y: p.focal_y }
+        : undefined,
   }));
 
   const coverIdx = (photos ?? []).findIndex((p) => p.is_cover);
@@ -397,16 +411,36 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
   const journalIds = journals.map((j) => j.id);
   const { data: photoRows, error: photoErr } = await supabase
     .from("journal_photos")
-    .select("journal_id, src, is_cover, photo_order")
+    .select("journal_id, src, is_cover, photo_order, focal_x, focal_y")
     .in("journal_id", journalIds)
     .or("is_cover.eq.true,photo_order.eq.0")
-    .returns<{ journal_id: string; src: string; is_cover: boolean; photo_order: number }[]>();
+    .returns<{
+      journal_id: string;
+      src: string;
+      is_cover: boolean;
+      photo_order: number;
+      focal_x: number | null;
+      focal_y: number | null;
+    }[]>();
   if (photoErr) throw photoErr;
 
-  const candidates = new Map<string, { src: string; is_cover: boolean; photo_order: number }[]>();
+  type CoverCandidate = {
+    src: string;
+    is_cover: boolean;
+    photo_order: number;
+    focal_x: number | null;
+    focal_y: number | null;
+  };
+  const candidates = new Map<string, CoverCandidate[]>();
   for (const p of photoRows ?? []) {
     const arr = candidates.get(p.journal_id) ?? [];
-    arr.push({ src: p.src, is_cover: p.is_cover, photo_order: p.photo_order });
+    arr.push({
+      src: p.src,
+      is_cover: p.is_cover,
+      photo_order: p.photo_order,
+      focal_x: p.focal_x,
+      focal_y: p.focal_y,
+    });
     candidates.set(p.journal_id, arr);
   }
 
@@ -414,7 +448,8 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
     const list = candidates.get(row.id) ?? [];
     const cover = list.find((p) => p.is_cover);
     const firstByOrder = [...list].sort((a, b) => a.photo_order - b.photo_order)[0];
-    const rawSrc = cover?.src ?? firstByOrder?.src ?? null;
+    const chosen = cover ?? firstByOrder;
+    const rawSrc = chosen?.src ?? null;
     let coverPhotoSrc: string | null = rawSrc;
     if (rawSrc && isStoragePath(rawSrc)) {
       try {
@@ -424,6 +459,10 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
         coverPhotoSrc = null;
       }
     }
+    const coverFocalPoint =
+      chosen && chosen.focal_x != null && chosen.focal_y != null
+        ? { x: chosen.focal_x, y: chosen.focal_y }
+        : null;
     return {
       id: row.id,
       title: row.title ?? "",
@@ -434,6 +473,7 @@ export async function listJournals(userId: string): Promise<JournalSummary[]> {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       coverPhotoSrc,
+      coverFocalPoint,
       isPublic: !!row.is_public,
       shareSlug: row.share_slug,
     } as JournalSummary;

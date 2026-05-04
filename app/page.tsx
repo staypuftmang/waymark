@@ -42,6 +42,12 @@ const JournalStatsModal = dynamic(() => import("@/app/components/JournalStatsMod
   ssr: false,
   loading: () => null,
 });
+// FocalPointPicker is only mounted when the user taps a photo to set the
+// crop point — pull it out of the initial bundle.
+const FocalPointPicker = dynamic(() => import("@/app/components/FocalPointPicker"), {
+  ssr: false,
+  loading: () => null,
+});
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
 import AiButton from "@/app/components/AiButton";
@@ -1119,6 +1125,24 @@ function PageInner() {
         />
       )}
 
+      {/* ═══════════════ FOCAL POINT PICKER ═══════════════ */}
+      {state.focalPickerPhotoId !== null && (() => {
+        const target = photos.find((p) => p.id === state.focalPickerPhotoId);
+        if (!target) return null;
+        return (
+          <FocalPointPicker
+            src={target.src}
+            initial={target.focalPoint}
+            onApply={(next) => dispatch({
+              type: "SET_PHOTO_FOCAL_POINT",
+              id: target.id,
+              focalPoint: next,
+            })}
+            onClose={() => dispatch({ type: "CLOSE_FOCAL_PICKER" })}
+          />
+        );
+      })()}
+
       {/* ═══════════════ DELETE JOURNAL CONFIRM ═══════════════ */}
       {deleteJournalConfirm && (
         <ConfirmModal
@@ -1601,9 +1625,33 @@ function PageInner() {
                               <img
                                 src={p.src}
                                 className="object-cover block"
-                                style={{ width: 72, height: 72, borderRadius: 3 }}
+                                style={{
+                                  width: 72,
+                                  height: 72,
+                                  borderRadius: 3,
+                                  objectPosition: p.focalPoint
+                                    ? `${p.focalPoint.x}% ${p.focalPoint.y}%`
+                                    : "50% 50%",
+                                }}
                                 alt=""
                               />
+                              {p.focalPoint && (p.focalPoint.x !== 50 || p.focalPoint.y !== 50) && (
+                                <span
+                                  aria-label="Custom focal point"
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 4,
+                                    left: 4,
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: "50%",
+                                    background: "#C4A45A",
+                                    border: "1.5px solid #fff",
+                                    boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
+                                    pointerEvents: "none",
+                                  }}
+                                />
+                              )}
                               {!isCover && (
                                 <span
                                   className="wm-cover-hover absolute flex items-center justify-center"
@@ -1660,6 +1708,7 @@ function PageInner() {
                           width: 72,
                           height: 72,
                           objectFit: "cover",
+                          objectPosition: p.focalPoint ? `${p.focalPoint.x}% ${p.focalPoint.y}%` : "50% 50%",
                           borderRadius: 4,
                           border: "2px solid var(--color-accent)",
                           boxShadow: "0 8px 24px rgba(0,0,0,0.15)",
@@ -1817,7 +1866,13 @@ function PageInner() {
                     <img
                       src={p.src}
                       alt=""
-                      style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 3 }}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        objectFit: "cover",
+                        objectPosition: p.focalPoint ? `${p.focalPoint.x}% ${p.focalPoint.y}%` : "50% 50%",
+                        borderRadius: 3,
+                      }}
                     />
                   </div>
                 )}
@@ -2039,7 +2094,13 @@ function PageInner() {
                   <img
                     src={p.src}
                     alt=""
-                    style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 3 }}
+                    style={{
+                      width: 80,
+                      height: 80,
+                      objectFit: "cover",
+                      objectPosition: p.focalPoint ? `${p.focalPoint.x}% ${p.focalPoint.y}%` : "50% 50%",
+                      borderRadius: 3,
+                    }}
                   />
                 </div>
               )}

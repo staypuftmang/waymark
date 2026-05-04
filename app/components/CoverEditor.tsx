@@ -1,6 +1,7 @@
 "use client";
 
-import { Photo } from "@/app/lib/types";
+import { Photo, focalPointToObjectPosition, isCustomFocalPoint } from "@/app/lib/types";
+import { useJournal } from "@/app/context/JournalContext";
 import HelperText from "./HelperText";
 
 interface CoverEditorProps {
@@ -22,6 +23,7 @@ export default function CoverEditor({
   onUpdateCoverTitle,
   onUpdateCoverSubtitle,
 }: CoverEditorProps) {
+  const { dispatch } = useJournal();
   if (coverPhotoId === null) return null;
   const cover = photos.find((p) => p.id === coverPhotoId);
   if (!cover) return null;
@@ -56,20 +58,42 @@ export default function CoverEditor({
       <div style={labelStyle}>Cover</div>
 
       <div className="flex gap-3 items-start" style={{ marginBottom: 14 }}>
-        <img
-          src={cover.src}
-          alt=""
-          style={{
-            width: 96,
-            height: 54,
-            objectFit: "cover",
-            borderRadius: 3,
-            flexShrink: 0,
-          }}
-        />
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <img
+            src={cover.src}
+            alt=""
+            onClick={() => dispatch({ type: "OPEN_FOCAL_PICKER", id: cover.id })}
+            title="Tap to set focal point"
+            className="cursor-pointer"
+            style={{
+              width: 96,
+              height: 54,
+              objectFit: "cover",
+              objectPosition: focalPointToObjectPosition(cover.focalPoint),
+              borderRadius: 3,
+            }}
+          />
+          {isCustomFocalPoint(cover.focalPoint) && (
+            <span
+              aria-label="Custom focal point"
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 4,
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#C4A45A",
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
         <div style={{ flex: 1 }}>
           <HelperText>
-            Landscape photos work best for covers. Your photo will be cropped to a 16:9 widescreen format.
+            Landscape photos work best for covers. Your photo will be cropped to a 16:9 widescreen format. Tap the thumbnail to choose a focal point.
           </HelperText>
         </div>
       </div>

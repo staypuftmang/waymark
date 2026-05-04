@@ -1,6 +1,6 @@
 "use client";
 
-import { Photo, VisualStyle, VisualStyleKey, LengthKey } from "@/app/lib/types";
+import { Photo, VisualStyle, VisualStyleKey, LengthKey, focalPointToObjectPosition } from "@/app/lib/types";
 import PhotoCaption from "./PhotoCaption";
 import { getBorderRadius } from "./utils";
 
@@ -25,6 +25,7 @@ export default function Filmstrip({ photos, vs, vk, len, onPhotoClick }: LayoutP
               width: "100%",
               aspectRatio: "16/9",
               objectFit: "cover",
+              objectPosition: focalPointToObjectPosition(p.focalPoint),
               borderRadius: br,
               display: "block",
               cursor: onPhotoClick ? "pointer" : "default",

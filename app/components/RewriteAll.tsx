@@ -312,7 +312,14 @@ export default function RewriteAll({
                         <img
                           src={p.src}
                           className="object-cover"
-                          style={{ width: 40, height: 40, borderRadius: 3 }}
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 3,
+                            objectPosition: p.focalPoint
+                              ? `${p.focalPoint.x}% ${p.focalPoint.y}%`
+                              : "50% 50%",
+                          }}
                           alt=""
                         />
                         <div className="text-stone self-center" style={{ fontSize: 11 }}>

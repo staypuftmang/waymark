@@ -188,7 +188,18 @@ export default function JournalCard({
       >
         {journal.coverPhotoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={journal.coverPhotoSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img
+            src={journal.coverPhotoSrc}
+            alt=""
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              objectPosition: journal.coverFocalPoint
+                ? `${journal.coverFocalPoint.x}% ${journal.coverFocalPoint.y}%`
+                : "50% 50%",
+            }}
+          />
         ) : (
           <div
             className="font-title"

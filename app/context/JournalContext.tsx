@@ -12,7 +12,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from "react";
-import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
+import type { Photo, FocalPoint, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
 import { saveState, type SavedState } from "@/app/lib/storage";
 import {
   saveJournalMetadata,
@@ -74,6 +74,12 @@ export interface JournalState {
   // UI dismissals tied to journal data
   softCapDismissed: boolean;
   briefNudgeDismissed: boolean;
+
+  /** Photo id whose focal-point picker is currently open, or null. The
+   * picker UI lives at the page level, but the click-to-open trigger
+   * fires from deep inside PhotoCard, so we stash the id in journal
+   * state to avoid prop-drilling a callback through five components. */
+  focalPickerPhotoId: number | null;
 }
 
 export const INITIAL_JOURNAL_STATE: JournalState = {
@@ -102,6 +108,7 @@ export const INITIAL_JOURNAL_STATE: JournalState = {
   genProgress: null,
   softCapDismissed: false,
   briefNudgeDismissed: false,
+  focalPickerPhotoId: null,
 };
 
 export type JournalAction =
@@ -120,6 +127,9 @@ export type JournalAction =
   | { type: "REMOVE_PHOTO"; id: number }
   | { type: "REORDER_PHOTOS"; photos: Photo[] }
   | { type: "UPDATE_PHOTO_FIELD"; id: number; field: keyof Photo; value: string }
+  | { type: "SET_PHOTO_FOCAL_POINT"; id: number; focalPoint: FocalPoint | null }
+  | { type: "OPEN_FOCAL_PICKER"; id: number }
+  | { type: "CLOSE_FOCAL_PICKER" }
   // Style
   | { type: "SET_VK"; value: VisualStyleKey }
   | { type: "SET_WS"; value: WordStyleKey }
@@ -184,6 +194,19 @@ export function reducer(state: JournalState, action: JournalAction): JournalStat
           p.id === action.id ? { ...p, [action.field]: action.value } : p,
         ),
       };
+    case "SET_PHOTO_FOCAL_POINT":
+      return {
+        ...state,
+        photos: state.photos.map((p) =>
+          p.id === action.id
+            ? { ...p, focalPoint: action.focalPoint ?? undefined }
+            : p,
+        ),
+      };
+    case "OPEN_FOCAL_PICKER":
+      return { ...state, focalPickerPhotoId: action.id };
+    case "CLOSE_FOCAL_PICKER":
+      return { ...state, focalPickerPhotoId: null };
     case "SET_VK":
       return { ...state, vk: action.value };
     case "SET_WS":
@@ -492,6 +515,12 @@ export function JournalProvider({ children }: JournalProviderProps) {
             if (curr.aiCaption !== prev.aiCaption) fields.ai_caption = curr.aiCaption || "";
             if (curr.aiNotes !== prev.aiNotes) fields.ai_notes = curr.aiNotes || "";
             if (curr.aiParagraph !== prev.aiParagraph) fields.ai_paragraph = curr.aiParagraph || "";
+            const prevX = prev.focalPoint?.x ?? null;
+            const prevY = prev.focalPoint?.y ?? null;
+            const currX = curr.focalPoint ? Math.round(curr.focalPoint.x) : null;
+            const currY = curr.focalPoint ? Math.round(curr.focalPoint.y) : null;
+            if (prevX !== currX) fields.focal_x = currX;
+            if (prevY !== currY) fields.focal_y = currY;
             if (Object.keys(fields).length > 0) dirty.push([curr.id, fields]);
           }
           if (dirty.length > 0) {

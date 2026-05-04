@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Photo } from "@/app/lib/types";
+import { Photo, focalPointToObjectPosition, isCustomFocalPoint } from "@/app/lib/types";
 import { aiCall } from "@/app/lib/ai";
 import { rewriteCaptionPrompt, rewriteNotesPrompt, generateParagraphPrompt } from "@/app/lib/prompts";
 import { useJournal } from "@/app/context/JournalContext";
@@ -141,18 +141,38 @@ export default function PhotoCard({
           </div>
         )}
 
-        <div className="wm-photocard-thumb flex flex-col items-center gap-1 shrink-0">
+        <div className="wm-photocard-thumb flex flex-col items-center gap-1 shrink-0" style={{ position: "relative" }}>
           <img
             src={p.src}
-            className="object-cover"
+            className="object-cover cursor-pointer"
+            onClick={() => dispatch({ type: "OPEN_FOCAL_PICKER", id: p.id })}
             style={{
               width: 80,
               height: 80,
               borderRadius: 3,
               border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+              objectPosition: focalPointToObjectPosition(p.focalPoint),
             }}
             alt=""
+            title="Tap to set focal point"
           />
+          {isCustomFocalPoint(p.focalPoint) && (
+            <span
+              aria-label="Custom focal point"
+              style={{
+                position: "absolute",
+                top: 6,
+                right: 6,
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#C4A45A",
+                border: "1.5px solid #fff",
+                boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
           <button
             style={{ ...iconBtn, color: "var(--color-accent)" }}
             onClick={() => rm(p.id)}
