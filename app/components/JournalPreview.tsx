@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { track } from "@vercel/analytics";
-import { VisualStyleKey, LayoutKey } from "@/app/lib/types";
+import { VisualStyleKey, LayoutKey, focalPointToObjectPosition } from "@/app/lib/types";
 import { VS, LO, formatDate } from "@/app/lib/constants";
 import { LayoutMap } from "./layouts";
 import HeaderAuthControls from "./HeaderAuthControls";
@@ -318,9 +318,10 @@ export default function JournalPreview({
               style={{
                 display: "block",
                 width: "100%",
-                height: "auto",
+                aspectRatio: "16 / 9",
                 maxHeight: "min(60vh, 600px)",
-                objectFit: "contain",
+                objectFit: "cover",
+                objectPosition: focalPointToObjectPosition(coverPhoto.focalPoint),
                 margin: "0 auto",
               }}
             />

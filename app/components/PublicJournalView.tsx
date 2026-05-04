@@ -1,4 +1,4 @@
-import { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
+import { Photo, VisualStyleKey, LayoutKey, LengthKey, focalPointToObjectPosition } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { LayoutMap } from "./layouts";
 
@@ -92,9 +92,10 @@ export default function PublicJournalView({
               style={{
                 display: "block",
                 width: "100%",
-                height: "auto",
+                aspectRatio: "16 / 9",
                 maxHeight: "min(60vh, 600px)",
-                objectFit: "contain",
+                objectFit: "cover",
+                objectPosition: focalPointToObjectPosition(coverPhoto.focalPoint),
                 margin: "0 auto",
               }}
             />

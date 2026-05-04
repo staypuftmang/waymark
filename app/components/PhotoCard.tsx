@@ -142,37 +142,76 @@ export default function PhotoCard({
         )}
 
         <div className="wm-photocard-thumb flex flex-col items-center gap-1 shrink-0" style={{ position: "relative" }}>
-          <img
-            src={p.src}
-            className="object-cover cursor-pointer"
-            onClick={() => dispatch({ type: "OPEN_FOCAL_PICKER", id: p.id })}
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 3,
-              border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
-              objectPosition: focalPointToObjectPosition(p.focalPoint),
-            }}
-            alt=""
-            title="Tap to set focal point"
-          />
-          {isCustomFocalPoint(p.focalPoint) && (
-            <span
-              aria-label="Custom focal point"
+          <div style={{ position: "relative", width: 80, height: 80 }}>
+            <img
+              src={p.src}
+              className="object-cover cursor-pointer"
+              onClick={() => dispatch({ type: "OPEN_FOCAL_PICKER", id: p.id })}
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 3,
+                border: isCover ? "2px solid #C4A45A" : "2px solid transparent",
+                objectPosition: focalPointToObjectPosition(p.focalPoint),
+                display: "block",
+              }}
+              alt=""
+              title="Tap to set focal point"
+            />
+            {/* Dedicated focal-point trigger. Sits on the thumbnail so
+                discoverability doesn't depend on knowing the picture itself
+                is clickable. The img onClick stays as a secondary trigger
+                so a tap anywhere on the thumb still works. */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                dispatch({ type: "OPEN_FOCAL_PICKER", id: p.id });
+              }}
+              className="cursor-pointer border-none"
+              aria-label="Set focal point"
+              title="Set focal point"
               style={{
                 position: "absolute",
-                top: 6,
-                right: 6,
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "#C4A45A",
-                border: "1.5px solid #fff",
-                boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
-                pointerEvents: "none",
+                top: 4,
+                left: 4,
+                width: 22,
+                height: 22,
+                borderRadius: 4,
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
               }}
-            />
-          )}
+            >
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+                <path d="M3 1 L1 1 L1 3" />
+                <path d="M11 1 L13 1 L13 3" />
+                <path d="M1 11 L1 13 L3 13" />
+                <path d="M13 11 L13 13 L11 13" />
+                <circle cx="7" cy="7" r="1" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+            {isCustomFocalPoint(p.focalPoint) && (
+              <span
+                aria-label="Custom focal point"
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: "#C4A45A",
+                  border: "1.5px solid #fff",
+                  boxShadow: "0 0 0 1px rgba(0,0,0,0.2)",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
+          </div>
           <button
             style={{ ...iconBtn, color: "var(--color-accent)" }}
             onClick={() => rm(p.id)}

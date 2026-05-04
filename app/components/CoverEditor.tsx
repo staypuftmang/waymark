@@ -58,7 +58,7 @@ export default function CoverEditor({
       <div style={labelStyle}>Cover</div>
 
       <div className="flex gap-3 items-start" style={{ marginBottom: 14 }}>
-        <div style={{ position: "relative", flexShrink: 0 }}>
+        <div style={{ position: "relative", flexShrink: 0, width: 96, height: 54 }}>
           <img
             src={cover.src}
             alt=""
@@ -71,8 +71,43 @@ export default function CoverEditor({
               objectFit: "cover",
               objectPosition: focalPointToObjectPosition(cover.focalPoint),
               borderRadius: 3,
+              display: "block",
             }}
           />
+          {/* Dedicated focal-point trigger — same affordance as PhotoCard
+              so the cover and body photo flows feel consistent. */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              dispatch({ type: "OPEN_FOCAL_PICKER", id: cover.id });
+            }}
+            className="cursor-pointer border-none"
+            aria-label="Set focal point"
+            title="Set focal point"
+            style={{
+              position: "absolute",
+              top: 4,
+              left: 4,
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              background: "rgba(0,0,0,0.55)",
+              color: "#fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+              <path d="M3 1 L1 1 L1 3" />
+              <path d="M11 1 L13 1 L13 3" />
+              <path d="M1 11 L1 13 L3 13" />
+              <path d="M13 11 L13 13 L11 13" />
+              <circle cx="7" cy="7" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
           {isCustomFocalPoint(cover.focalPoint) && (
             <span
               aria-label="Custom focal point"
@@ -93,7 +128,7 @@ export default function CoverEditor({
         </div>
         <div style={{ flex: 1 }}>
           <HelperText>
-            Landscape photos work best for covers. Your photo will be cropped to a 16:9 widescreen format. Tap the thumbnail to choose a focal point.
+            Your cover crops to a 16:9 widescreen. Tap the crop icon on the thumbnail to set the focal point.
           </HelperText>
         </div>
       </div>
