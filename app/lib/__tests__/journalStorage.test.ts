@@ -87,6 +87,7 @@ function makeJournalData(overrides: Partial<JournalData> = {}): JournalData {
     coverSubtitle: "May 2026",
     coverTitleEdited: true,
     photos: [makePhoto()],
+    colophon: null,
     ...overrides,
   };
 }
@@ -125,6 +126,7 @@ describe("journalToFields", () => {
       cover_title: "Patagonia",
       cover_subtitle: "May 2026",
       cover_title_edited: true,
+      colophon: null,
     });
   });
 

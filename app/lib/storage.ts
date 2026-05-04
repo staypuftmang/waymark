@@ -48,6 +48,21 @@ export interface SavedState {
   coverTitle?: string;
   coverSubtitle?: string;
   coverTitleEdited?: boolean;
+  /** Trip-details colophon. Optional for back-compat with saves predating
+   * the colophon migration. */
+  colophon?: {
+    enabled: boolean;
+    pullQuote: string;
+    closingLine: string;
+    items: Array<{
+      id: string;
+      label: string;
+      value: string;
+      visible: boolean;
+      order: number;
+      syncTo?: "dates";
+    }>;
+  } | null;
 }
 
 export async function saveState(state: SavedState): Promise<void> {

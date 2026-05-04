@@ -6,11 +6,20 @@ import { useJournal } from "./JournalContext";
 import { aiCall } from "@/app/lib/ai";
 import {
   batchRewritePrompt,
+  colophonGeneratePrompt,
   quickCreatePrompt,
   PREVIOUS_ENTRY_WINDOW,
   type PreviousEntry,
 } from "@/app/lib/prompts";
 import { cleanJson, formatDate } from "@/app/lib/constants";
+import { DEFAULT_COLOPHON, type Colophon, type ColophonItem } from "@/app/lib/types";
+
+/** Newly-generated colophon items get UUIDs so React keys + reorder work. */
+function newColophonId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export interface GenerationResult {
   generated: number;
@@ -169,6 +178,67 @@ export function useJournalGeneration(): JournalGenerationApi {
       if (processed > 0 && !cancelled) {
         dispatch({ type: "SET_GEN_SNAPSHOT", ws, len });
       }
+
+      // Colophon generation: one extra AI call after the narrative loop,
+      // skipped if the loop was cancelled, no entries got AI text, or the
+      // journal already has a colophon (Update-Journal flow shouldn't
+      // overwrite the user's edits). record:false so it doesn't count
+      // against the per-journal rewrite cap.
+      const isFullyFreshGen = !cancelled && processed > 0 && !state.colophon;
+      if (isFullyFreshGen) {
+        // Pull narrative from the rolling window (truncated to ~3 most-
+        // recent paragraphs) plus the captions of every just-generated
+        // photo. This gives the colophon prompt enough material to surface
+        // specific scenes without re-fetching state.
+        const narrativePieces = previousEntries
+          .map((e) => e.paragraph)
+          .filter(Boolean)
+          .join("\n\n");
+        const cprompt = colophonGeneratePrompt(
+          ws,
+          tripTitle,
+          tripBrief,
+          dateDisplay,
+          narrativePieces,
+          photos.length,
+        );
+        const raw = await aiCall(cprompt, undefined, {
+          actionType: "rewrite_batch_photo",
+          journalId: currentJournalId,
+          record: false,
+        });
+        if (raw) {
+          try {
+            const obj = JSON.parse(cleanJson(raw)) as {
+              pullQuote?: string;
+              closingLine?: string;
+              items?: Array<{ label?: string; value?: string; syncTo?: string }>;
+            };
+            const items: ColophonItem[] = (obj.items ?? [])
+              .slice(0, 7)
+              .map((it, i) => ({
+                id: newColophonId(),
+                label: (it.label ?? "").trim(),
+                value: (it.value ?? "").trim(),
+                visible: true,
+                order: i,
+                ...(it.syncTo === "dates" ? { syncTo: "dates" as const } : {}),
+              }))
+              .filter((it) => it.label || it.value);
+            const colophon: Colophon = {
+              ...DEFAULT_COLOPHON,
+              enabled: true,
+              pullQuote: (obj.pullQuote ?? "").trim(),
+              closingLine: (obj.closingLine ?? "").trim(),
+              items,
+            };
+            dispatch({ type: "SET_COLOPHON", colophon });
+          } catch (e) {
+            console.warn("Colophon parse failed:", e);
+          }
+        }
+      }
+
       return { generated: processed, cancelled };
     },
     [state, dispatch, dateDisplay, hasAnyAi],

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
-import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey } from "./types";
+import type { Photo, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Colophon } from "./types";
+import { DEFAULT_COLOPHON } from "./types";
 import {
   PHOTOS_BUCKET,
   deleteJournalPhotos as deleteJournalPhotoStorage,
@@ -31,6 +32,9 @@ export interface JournalData {
   coverSubtitle: string;
   coverTitleEdited: boolean;
   photos: Photo[];
+  /** Trip-details closing section. Null on freshly-created journals (no
+   * colophon yet); populated by the post-narrative AI generation step. */
+  colophon: Colophon | null;
 }
 
 export interface LoadedJournal {
@@ -91,6 +95,7 @@ interface JournalRow {
   cover_title: string | null;
   cover_subtitle: string | null;
   cover_title_edited: boolean;
+  colophon: Colophon | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -130,6 +135,7 @@ export function journalToFields(d: JournalData) {
     cover_title: d.coverTitle,
     cover_subtitle: d.coverSubtitle,
     cover_title_edited: d.coverTitleEdited,
+    colophon: d.colophon,
   };
 }
 
@@ -373,6 +379,7 @@ export async function loadJournal(
       coverSubtitle: journal.cover_subtitle ?? "",
       coverTitleEdited: !!journal.cover_title_edited,
       photos: photoObjs,
+      colophon: journal.colophon ?? null,
     },
     photoRemoteIds,
     photoStoragePaths,

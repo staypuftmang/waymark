@@ -1,6 +1,7 @@
-import { Photo, VisualStyleKey, LayoutKey, LengthKey, focalPointToObjectPosition } from "@/app/lib/types";
+import { Photo, VisualStyleKey, LayoutKey, LengthKey, Colophon, focalPointToObjectPosition } from "@/app/lib/types";
 import { VS, LO } from "@/app/lib/constants";
 import { LayoutMap } from "./layouts";
+import ColophonRendered from "./ColophonRendered";
 
 interface PublicJournalViewProps {
   tripTitle: string;
@@ -13,6 +14,7 @@ interface PublicJournalViewProps {
   coverPhotoId: number | null;
   coverTitle: string;
   coverSubtitle: string;
+  colophon?: Colophon | null;
 }
 
 export default function PublicJournalView({
@@ -26,7 +28,9 @@ export default function PublicJournalView({
   coverPhotoId,
   coverTitle,
   coverSubtitle,
+  colophon = null,
 }: PublicJournalViewProps) {
+  const hasColophon = !!(colophon && colophon.enabled);
   const vs = VS[vk];
   const LayoutComponent = LayoutMap[lo];
   const coverPhoto = coverPhotoId !== null ? photos.find((p) => p.id === coverPhotoId) : null;
@@ -226,19 +230,25 @@ export default function PublicJournalView({
       >
         <LayoutComponent photos={photos} vs={vs} vk={vk} len={len} />
 
-        <div
-          style={{
-            textAlign: "center",
-            marginTop: 56,
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: 3,
-            opacity: 0.2,
-          }}
-        >
-          &mdash; fin &mdash;
-        </div>
+        {/* Hide the legacy fin mark when the colophon takes over —
+            ColophonRendered carries its own fin + Made-with-Waymark. */}
+        {!hasColophon && (
+          <div
+            style={{
+              textAlign: "center",
+              marginTop: 56,
+              fontSize: 9,
+              textTransform: "uppercase",
+              letterSpacing: 3,
+              opacity: 0.2,
+            }}
+          >
+            &mdash; fin &mdash;
+          </div>
+        )}
       </div>
+
+      <ColophonRendered colophon={colophon} />
 
       {/* CTA after FIN */}
       <div style={{ padding: "0 24px 60px" }}>

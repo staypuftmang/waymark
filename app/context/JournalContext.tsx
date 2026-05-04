@@ -12,7 +12,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from "react";
-import type { Photo, FocalPoint, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode } from "@/app/lib/types";
+import type { Photo, FocalPoint, VisualStyleKey, WordStyleKey, LayoutKey, LengthKey, Mode, Colophon, ColophonItem } from "@/app/lib/types";
 import { saveState, type SavedState } from "@/app/lib/storage";
 import {
   saveJournalMetadata,
@@ -80,6 +80,11 @@ export interface JournalState {
    * fires from deep inside PhotoCard, so we stash the id in journal
    * state to avoid prop-drilling a callback through five components. */
   focalPickerPhotoId: number | null;
+
+  /** Trip-details closing section. Null until the post-narrative AI step
+   * generates one; once present, the editor on the preview page mutates
+   * it via SET_COLOPHON / UPDATE_COLOPHON_* actions. */
+  colophon: Colophon | null;
 }
 
 export const INITIAL_JOURNAL_STATE: JournalState = {
@@ -109,6 +114,7 @@ export const INITIAL_JOURNAL_STATE: JournalState = {
   softCapDismissed: false,
   briefNudgeDismissed: false,
   focalPickerPhotoId: null,
+  colophon: null,
 };
 
 export type JournalAction =
@@ -130,6 +136,16 @@ export type JournalAction =
   | { type: "SET_PHOTO_FOCAL_POINT"; id: number; focalPoint: FocalPoint | null }
   | { type: "OPEN_FOCAL_PICKER"; id: number }
   | { type: "CLOSE_FOCAL_PICKER" }
+  // Colophon
+  | { type: "SET_COLOPHON"; colophon: Colophon | null }
+  | { type: "SET_COLOPHON_ENABLED"; enabled: boolean }
+  | { type: "SET_COLOPHON_PULL_QUOTE"; value: string }
+  | { type: "SET_COLOPHON_CLOSING"; value: string }
+  | { type: "ADD_COLOPHON_ITEM" }
+  | { type: "REMOVE_COLOPHON_ITEM"; id: string }
+  | { type: "UPDATE_COLOPHON_ITEM"; id: string; field: "label" | "value"; value: string }
+  | { type: "TOGGLE_COLOPHON_ITEM"; id: string }
+  | { type: "REORDER_COLOPHON_ITEMS"; ids: string[] }
   // Style
   | { type: "SET_VK"; value: VisualStyleKey }
   | { type: "SET_WS"; value: WordStyleKey }
@@ -207,6 +223,73 @@ export function reducer(state: JournalState, action: JournalAction): JournalStat
       return { ...state, focalPickerPhotoId: action.id };
     case "CLOSE_FOCAL_PICKER":
       return { ...state, focalPickerPhotoId: null };
+    case "SET_COLOPHON":
+      return { ...state, colophon: action.colophon };
+    case "SET_COLOPHON_ENABLED":
+      return state.colophon
+        ? { ...state, colophon: { ...state.colophon, enabled: action.enabled } }
+        : state;
+    case "SET_COLOPHON_PULL_QUOTE":
+      return state.colophon
+        ? { ...state, colophon: { ...state.colophon, pullQuote: action.value } }
+        : state;
+    case "SET_COLOPHON_CLOSING":
+      return state.colophon
+        ? { ...state, colophon: { ...state.colophon, closingLine: action.value } }
+        : state;
+    case "ADD_COLOPHON_ITEM": {
+      if (!state.colophon) return state;
+      const maxOrder = state.colophon.items.reduce((m, it) => Math.max(m, it.order), -1);
+      const newItem: ColophonItem = {
+        id: typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        label: "",
+        value: "",
+        visible: true,
+        order: maxOrder + 1,
+      };
+      return { ...state, colophon: { ...state.colophon, items: [...state.colophon.items, newItem] } };
+    }
+    case "REMOVE_COLOPHON_ITEM":
+      return state.colophon
+        ? { ...state, colophon: { ...state.colophon, items: state.colophon.items.filter((it) => it.id !== action.id) } }
+        : state;
+    case "UPDATE_COLOPHON_ITEM":
+      return state.colophon
+        ? {
+            ...state,
+            colophon: {
+              ...state.colophon,
+              items: state.colophon.items.map((it) =>
+                it.id === action.id ? { ...it, [action.field]: action.value } : it,
+              ),
+            },
+          }
+        : state;
+    case "TOGGLE_COLOPHON_ITEM":
+      return state.colophon
+        ? {
+            ...state,
+            colophon: {
+              ...state.colophon,
+              items: state.colophon.items.map((it) =>
+                it.id === action.id ? { ...it, visible: !it.visible } : it,
+              ),
+            },
+          }
+        : state;
+    case "REORDER_COLOPHON_ITEMS": {
+      if (!state.colophon) return state;
+      const byId = new Map(state.colophon.items.map((it) => [it.id, it]));
+      const reordered = action.ids
+        .map((id, i) => {
+          const it = byId.get(id);
+          return it ? { ...it, order: i } : null;
+        })
+        .filter((it): it is ColophonItem => it !== null);
+      return { ...state, colophon: { ...state.colophon, items: reordered } };
+    }
     case "SET_VK":
       return { ...state, vk: action.value };
     case "SET_WS":
@@ -273,6 +356,7 @@ export function reducer(state: JournalState, action: JournalAction): JournalStat
         coverTitle: s.coverTitle ?? "",
         coverSubtitle: s.coverSubtitle ?? "",
         coverTitleEdited: !!s.coverTitleEdited,
+        colophon: (s.colophon as Colophon | null | undefined) ?? null,
       };
     }
     case "LOAD_FROM_REMOTE": {
@@ -297,6 +381,7 @@ export function reducer(state: JournalState, action: JournalAction): JournalStat
         coverSubtitle: d.coverSubtitle ?? "",
         coverTitleEdited: !!d.coverTitleEdited,
         currentJournalId: action.journalId,
+        colophon: d.colophon ?? null,
       };
     }
     case "RESET":
@@ -427,6 +512,7 @@ export function JournalProvider({ children }: JournalProviderProps) {
         coverTitle: state.coverTitle,
         coverSubtitle: state.coverSubtitle,
         coverTitleEdited: state.coverTitleEdited,
+        colophon: state.colophon,
       };
       saveState(saved);
     }, 2000);
@@ -451,6 +537,7 @@ export function JournalProvider({ children }: JournalProviderProps) {
     state.coverTitle,
     state.coverSubtitle,
     state.coverTitleEdited,
+    state.colophon,
   ]);
 
   // ── Cloud auto-save (debounced 2s, signed-in only) ──
@@ -476,6 +563,7 @@ export function JournalProvider({ children }: JournalProviderProps) {
       coverSubtitle: state.coverSubtitle,
       coverTitleEdited: state.coverTitleEdited,
       photos: state.photos,
+      colophon: state.colophon,
     };
 
     if (isEmptyJournal(data)) return;
@@ -586,6 +674,7 @@ export function JournalProvider({ children }: JournalProviderProps) {
     state.photos,
     state.currentJournalId,
     state.quickGenerating,
+    state.colophon,
   ]);
 
   // Reset dismissals when conditions go out of band

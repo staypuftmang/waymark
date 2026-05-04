@@ -17,6 +17,8 @@ import { useJournal } from "@/app/context/JournalContext";
 // initial /j/[slug] payload.
 const RefinePanel = dynamic(() => import("./RefinePanel"), { ssr: false, loading: () => null });
 const Lightbox = dynamic(() => import("./Lightbox"), { ssr: false, loading: () => null });
+const ColophonEditor = dynamic(() => import("./ColophonEditor"), { ssr: false, loading: () => null });
+import ColophonRendered from "./ColophonRendered";
 
 interface JournalPreviewProps {
   /** Page-level navigation callbacks — pencil-back to editor, logo-back home. */
@@ -58,6 +60,7 @@ export default function JournalPreview({
     currentJournalId: journalId,
     shareSlug,
     isPublic,
+    colophon,
   } = state;
   const dateDisplay = startDate
     ? endDate
@@ -472,34 +475,50 @@ export default function JournalPreview({
 
         <LayoutComponent photos={photos} vs={vs} vk={vk} len={len} onPhotoClick={openLightbox} />
 
-        <div data-export-footer>
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: 56,
-              fontSize: 9,
-              textTransform: "uppercase",
-              letterSpacing: 3,
-              opacity: 0.2,
-            }}
-          >
-            &#x2014; fin &#x2014;
+        {/* Colophon editor — shown in the editor preview only. data-export-hide
+            keeps it out of the PNG export. The renderer below is what's
+            actually captured. */}
+        {colophon && (
+          <div data-export-hide="colophon-editor">
+            <ColophonEditor />
           </div>
+        )}
 
-          {/* Export footer — visible in captures */}
-          <div
-            style={{
-              textAlign: "center",
-              marginTop: 40,
-              fontFamily: vs.fontCaption,
-              fontSize: 11,
-              opacity: 0.3,
-            }}
-          >
-            Made with Waymark &middot; mywaymarks.com
+        {/* When the colophon takes over as the closing section, hide the
+            legacy fin + "Made with Waymark" inline footer — the colophon
+            already has both. Pre-colophon journals keep the original
+            footer. */}
+        {!(colophon && colophon.enabled) && (
+          <div data-export-footer>
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: 56,
+                fontSize: 9,
+                textTransform: "uppercase",
+                letterSpacing: 3,
+                opacity: 0.2,
+              }}
+            >
+              &#x2014; fin &#x2014;
+            </div>
+
+            <div
+              style={{
+                textAlign: "center",
+                marginTop: 40,
+                fontFamily: vs.fontCaption,
+                fontSize: 11,
+                opacity: 0.3,
+              }}
+            >
+              Made with Waymark &middot; mywaymarks.com
+            </div>
           </div>
-        </div>
+        )}
       </div>
+
+      <ColophonRendered colophon={colophon} />
 
       {/* Refine panel */}
       <div data-export-hide="refine">

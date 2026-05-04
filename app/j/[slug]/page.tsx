@@ -7,7 +7,7 @@ import { isStoragePath } from "@/app/lib/photoStorage";
 import { getPublicPhotoUrl } from "@/app/lib/photoStorage.server";
 import PublicJournalView from "@/app/components/PublicJournalView";
 import { formatDate } from "@/app/lib/constants";
-import type { Photo, VisualStyleKey, LayoutKey, LengthKey } from "@/app/lib/types";
+import type { Photo, VisualStyleKey, LayoutKey, LengthKey, Colophon } from "@/app/lib/types";
 
 // Per-visit view tracking requires fresh execution on every request,
 // otherwise inserts only fire on cache misses (~once per hour per slug)
@@ -29,6 +29,7 @@ interface PublicJournal {
   photos: Photo[];
   coverPhotoId: number | null;
   publishedAt: string | null;
+  colophon: Colophon | null;
 }
 
 interface JournalRow {
@@ -44,6 +45,7 @@ interface JournalRow {
   cover_title: string | null;
   cover_subtitle: string | null;
   published_at: string | null;
+  colophon: Colophon | null;
 }
 
 interface PhotoRow {
@@ -67,7 +69,7 @@ const getPublicJournal = cache(async (slug: string): Promise<PublicJournal | nul
   const { data: journal, error } = await supabaseAdmin
     .from("journals")
     .select(
-      "id, user_id, title, trip_brief, start_date, end_date, visual_style, layout, length, cover_title, cover_subtitle, published_at"
+      "id, user_id, title, trip_brief, start_date, end_date, visual_style, layout, length, cover_title, cover_subtitle, published_at, colophon"
     )
     .eq("share_slug", slug)
     .eq("is_public", true)
@@ -124,6 +126,7 @@ const getPublicJournal = cache(async (slug: string): Promise<PublicJournal | nul
     photos,
     coverPhotoId,
     publishedAt: journal.published_at,
+    colophon: journal.colophon ?? null,
   };
 });
 
@@ -223,6 +226,7 @@ export default async function PublicJournalPage({ params }: PageParams) {
       coverPhotoId={journal.coverPhotoId}
       coverTitle={journal.coverTitle}
       coverSubtitle={journal.coverSubtitle}
+      colophon={journal.colophon}
     />
   );
 }

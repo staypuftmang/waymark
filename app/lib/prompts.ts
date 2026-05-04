@@ -269,6 +269,59 @@ Do NOT repeat the caption or notes verbatim. Expand on them with new detail grou
 Return ONLY the paragraph.`;
 }
 
+/**
+ * Asks the AI to draft the closing-page colophon: pull quote, closing line,
+ * and 5–7 label/value detail pairs (mix of factual and sentimental). One
+ * factual row should be the trip dates so the editor can offer a
+ * date-sync confirmation when the user edits it.
+ *
+ * Output is JSON. The "syncTo" field on the date row is opt-in — the
+ * generator returns "dates" so the client can wire the confirmation
+ * dialog when that row's value is edited.
+ */
+export function colophonGeneratePrompt(
+  ws: WordStyleKey,
+  title: string,
+  brief: string,
+  dates: string,
+  narrative: string,
+  photoCount: number,
+): string {
+  const briefLine = brief ? `Trip brief: "${truncateBrief(brief)}"` : "";
+  const dateLine = dates ? `Trip dates: ${dates}` : "";
+  const narrativeExcerpt = narrative.length > 1500 ? narrative.slice(0, 1500) + "…" : narrative;
+  return `You are writing a closing colophon for a personal travel journal.
+
+${WS[ws].sys}
+
+Generate the closing-page details for this journal:
+- Trip title: "${title}"
+${briefLine}
+${dateLine}
+- Photos in journal: ${photoCount}
+- Narrative excerpts (use these to surface the real, specific moments — do NOT quote them verbatim, except optionally for the pull quote):
+
+${narrativeExcerpt}
+
+Return ONLY valid JSON in this exact shape:
+{
+  "pullQuote": "1 vivid sentence drawn from the narrative — sensory, specific, in the same voice. Without quotation marks. 12–28 words.",
+  "closingLine": "1 short line in the form 'A Waymark journal — [where], [when]'. Keep it understated.",
+  "items": [
+    { "label": "Destination", "value": "<city/region/country specific to this trip>" },
+    { "label": "Dates", "value": "<the trip dates as a human range, mirroring the input>", "syncTo": "dates" },
+    { "label": "Photos taken", "value": "${photoCount}" },
+    ... 2–4 more items: a factual one (e.g. miles walked, days on the road, meals shared) and 1–3 sentimental ones (e.g. "Heart of the trip", "Best moment", "Would return for") with concrete, specific values drawn from the narrative.
+  ]
+}
+
+Rules:
+- Total items: 5 to 7. Always include Destination, Dates (with "syncTo": "dates"), and Photos taken as the first three.
+- Sentimental values should reference specific scenes / people / details from the narrative — never generic ("the views", "the food").
+- Labels are short (1–3 words) and Title Case.
+- No markdown, no preamble, no commentary — JSON only.`;
+}
+
 export function batchRewritePrompt(
   ws: WordStyleKey,
   title: string,

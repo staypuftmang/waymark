@@ -59,6 +59,36 @@ export interface LayoutOption {
   icon: string;
 }
 
+export interface ColophonItem {
+  id: string;
+  label: string;
+  value: string;
+  visible: boolean;
+  order: number;
+  /** When set, editing the value triggers a sync confirmation. The only
+   * supported target today is "dates" (writes back to the trip's
+   * startDate/endDate). The AI generator tags the date row with this. */
+  syncTo?: "dates";
+}
+
+export interface Colophon {
+  enabled: boolean;
+  pullQuote: string;
+  closingLine: string;
+  items: ColophonItem[];
+}
+
+export const DEFAULT_COLOPHON: Colophon = {
+  enabled: true,
+  pullQuote: "",
+  closingLine: "",
+  items: [],
+};
+
+/** Maximum number of detail rows allowed in the colophon. Editor disables
+ * the "Add detail" button when reached; spec says 7. */
+export const COLOPHON_MAX_ITEMS = 7;
+
 export type VisualStyleKey = "editorial" | "polaroid" | "darkroom" | "botanical" | "brutalist";
 export type WordStyleKey = "poetic" | "minimal" | "narrative" | "witty" | "raw";
 export type LayoutKey = "classic" | "magazine" | "grid" | "filmstrip" | "stacked";
