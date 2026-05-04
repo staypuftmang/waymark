@@ -8,28 +8,28 @@ import { Button } from "./ui";
 interface FocalPointPickerProps {
   src: string;
   initial: FocalPoint | undefined;
-  /** Which crop ratio the toggle starts on. Pass "cover" when launched
-   * from the cover thumbnail, "body" when launched from a body photo. */
-  initialMode?: CropMode;
   onApply: (next: FocalPoint | null) => void;
   onClose: () => void;
 }
 
-type CropMode = "cover" | "body";
 type CropAxis = "x" | "y" | "none";
 
+// 16:9 is the only ratio the focal point visibly governs in the journal:
+// it's the cover surface (in-app preview, public render, dashboard card)
+// and the Filmstrip body layout. The other body layouts render at the
+// photo's natural ratio, so a focal-point preview for them would be
+// misleading. Hardcoded to keep the picker honest.
 const COVER_RATIO = 16 / 9;
-const BODY_RATIO = 1; // square — matches the photo-management thumbnail
 const DEFAULT_FOCAL: FocalPoint = { x: 50, y: 50 };
 
 /**
  * Modal that lets the user pick a focal point on a photo. The full image
  * fills the modal; the area that *won't* be visible after cover-cropping
  * is dimmed with a semi-transparent overlay so the user can see exactly
- * what will be kept and what will be cropped at the toggled aspect ratio.
+ * what will be kept and what will be cropped.
  *
  * The overlay window math:
- *   given (imgW, imgH) and target ratio r,
+ *   given (imgW, imgH) and target ratio r = 16/9,
  *   if imgW / imgH > r → image is wider than the target, so the kept
  *     window has the full height and width = imgH * r; horizontal slot
  *     positions according to focal x.
@@ -44,11 +44,9 @@ const DEFAULT_FOCAL: FocalPoint = { x: 50, y: 50 };
 export default function FocalPointPicker({
   src,
   initial,
-  initialMode = "body",
   onApply,
   onClose,
 }: FocalPointPickerProps) {
-  const [mode, setMode] = useState<CropMode>(initialMode);
   const [focal, setFocal] = useState<FocalPoint>(initial ?? DEFAULT_FOCAL);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -61,23 +59,21 @@ export default function FocalPointPicker({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const ratio = mode === "cover" ? COVER_RATIO : BODY_RATIO;
-
-  /** Which axis of the photo actually gets cropped at the current ratio.
-   *  Wider-than-target → vertical bands trimmed left/right → "x" axis.
-   *  Taller-than-target → horizontal bands trimmed top/bottom → "y" axis.
+  /** Which axis of the photo actually gets cropped at 16:9.
+   *  Wider-than-16:9 → vertical bands trimmed left/right → "x" axis.
+   *  Taller-than-16:9 → horizontal bands trimmed top/bottom → "y" axis.
    *  Same ratio → nothing to crop, picker is informational only. */
   const cropAxis: CropAxis = useMemo(() => {
     if (!imgSize) return "none";
     const imgRatio = imgSize.w / imgSize.h;
-    if (Math.abs(imgRatio - ratio) < 0.001) return "none";
-    return imgRatio > ratio ? "x" : "y";
-  }, [imgSize, ratio]);
+    if (Math.abs(imgRatio - COVER_RATIO) < 0.001) return "none";
+    return imgRatio > COVER_RATIO ? "x" : "y";
+  }, [imgSize]);
 
   /** Convert a pointer event on the stage div to a focal-point % pair.
    *  Only the cropped axis updates — the other axis preserves whatever
-   *  value the focal point already had, so toggling between body/cover
-   *  modes doesn't wipe a setting the user made on the other axis. */
+   *  value the focal point already had, so a stored focal point from a
+   *  surface that crops along a different axis isn't silently zeroed. */
   const pointToFocal = (e: PointerEvent | React.PointerEvent): FocalPoint | null => {
     const stage = stageRef.current;
     if (!stage) return null;
@@ -128,11 +124,11 @@ export default function FocalPointPicker({
     if (!imgSize) return null;
     const { w, h } = imgSize;
     const imgRatio = w / h;
-    if (imgRatio > ratio) {
-      // Image is wider than the target — the crop window is the full
-      // height, narrower than the image. Slide horizontally based on
-      // focal.x; clamp to image bounds so the window can't fall off.
-      const winWidthPct = (ratio / imgRatio) * 100;
+    if (imgRatio > COVER_RATIO) {
+      // Image is wider than 16:9 — the crop window is the full height,
+      // narrower than the image. Slide horizontally based on focal.x;
+      // clamp to image bounds so the window can't fall off.
+      const winWidthPct = (COVER_RATIO / imgRatio) * 100;
       const halfPct = winWidthPct / 2;
       const cx = Math.max(halfPct, Math.min(100 - halfPct, focal.x));
       return {
@@ -142,7 +138,7 @@ export default function FocalPointPicker({
         heightPct: 100,
       };
     }
-    const winHeightPct = (imgRatio / ratio) * 100;
+    const winHeightPct = (imgRatio / COVER_RATIO) * 100;
     const halfPct = winHeightPct / 2;
     const cy = Math.max(halfPct, Math.min(100 - halfPct, focal.y));
     return {
@@ -151,7 +147,7 @@ export default function FocalPointPicker({
       widthPct: 100,
       heightPct: winHeightPct,
     };
-  }, [imgSize, ratio, focal.x, focal.y]);
+  }, [imgSize, focal.x, focal.y]);
 
   return (
     <div
@@ -193,37 +189,7 @@ export default function FocalPointPicker({
           </button>
         </div>
 
-        {/* Crop context toggle */}
-        <div
-          style={{
-            display: "inline-flex",
-            border: "1px solid var(--color-border)",
-            borderRadius: 999,
-            padding: 2,
-            marginBottom: 16,
-            background: "var(--color-paper)",
-          }}
-        >
-          {(["body", "cover"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className="cursor-pointer border-none"
-              style={{
-                padding: "6px 14px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontFamily: "var(--font-body)",
-                background: mode === m ? "var(--color-ink)" : "transparent",
-                color: mode === m ? "var(--color-card)" : "var(--color-ink)",
-              }}
-            >
-              {m === "body" ? "Body crop" : "Cover crop"}
-            </button>
-          ))}
-        </div>
-
-        <div className="wm-focal-grid">
+        <div className="wm-focal-grid" style={{ marginTop: 4 }}>
           {/* Stage (full photo + bright crop window). The wrapper takes
               the IMAGE'S natural aspect ratio so percentage-positioned
               overlays line up with the rendered pixels — using object-fit
@@ -341,7 +307,7 @@ export default function FocalPointPicker({
             <div
               style={{
                 width: "100%",
-                aspectRatio: ratio === COVER_RATIO ? "16 / 9" : "1 / 1",
+                aspectRatio: "16 / 9",
                 background: "var(--color-paper)",
                 borderRadius: 4,
                 overflow: "hidden",

@@ -1129,12 +1129,10 @@ function PageInner() {
       {state.focalPickerPhotoId !== null && (() => {
         const target = photos.find((p) => p.id === state.focalPickerPhotoId);
         if (!target) return null;
-        const isCover = coverPhotoId === target.id;
         return (
           <FocalPointPicker
             src={target.src}
             initial={target.focalPoint}
-            initialMode={isCover ? "cover" : "body"}
             onApply={(next) => dispatch({
               type: "SET_PHOTO_FOCAL_POINT",
               id: target.id,
