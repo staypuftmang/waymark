@@ -48,6 +48,12 @@ const FocalPointPicker = dynamic(() => import("@/app/components/FocalPointPicker
   ssr: false,
   loading: () => null,
 });
+// ColophonEditor only renders when the journal has a colophon, which only
+// happens after the first AI generation — keep it out of the initial bundle.
+const ColophonEditor = dynamic(() => import("@/app/components/ColophonEditor"), {
+  ssr: false,
+  loading: () => null,
+});
 import HeaderAuthControls from "@/app/components/HeaderAuthControls";
 import JournalCard from "@/app/components/JournalCard";
 import AiButton from "@/app/components/AiButton";
@@ -1879,6 +1885,11 @@ function PageInner() {
               />
             </div>
 
+            {/* Colophon editor — only rendered after AI has populated a
+                colophon. Sits below all photo / text editing sections so
+                it reads as the closing section's draft. */}
+            <ColophonEditor />
+
             <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
               <div className="flex justify-between w-full">
                 <Button variant="secondary" onClick={() => setStep(0)}>← Back</Button>
@@ -2106,6 +2117,10 @@ function PageInner() {
               )}
             />
           </div>
+
+          {/* Colophon editor — mirrors the placement on Quick step 10. Only
+              renders when state.colophon is non-null (post-AI-generation). */}
+          <ColophonEditor />
 
           <div className="flex flex-col items-end" style={{ marginTop: 36, gap: 8 }}>
             <div className="flex justify-between w-full">

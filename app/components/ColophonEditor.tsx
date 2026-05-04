@@ -23,29 +23,24 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useJournal } from "@/app/context/JournalContext";
 import { COLOPHON_MAX_ITEMS, type ColophonItem } from "@/app/lib/types";
-import { ConfirmModal } from "./ui";
+import { formatDate } from "@/app/lib/constants";
+import DatePicker from "./DatePicker";
 
 /**
- * Editor card for the trip-details colophon. Lives in the journal
- * editing UI (preview/edit screen). Pulls the colophon from journal
- * context and dispatches edits back. Disabled-state collapses to
- * just the title + Enable toggle; mirrors the design exactly.
+ * Editor card for the trip-details colophon. Lives at the bottom of the
+ * Review & Refine page (Quick step 10) and Photos & Notes (Full step 1).
+ * Pulls the colophon from journal context and dispatches edits back.
+ * Disabled state collapses to just the title + Enable toggle.
  *
- * Date sync: rows tagged syncTo: "dates" trigger a confirmation
- * dialog when their value changes. Confirm → write through; cancel
- * → revert to the previous value. Confirm also clears the trip's
- * start/end dates so the cover no longer auto-displays a date that
- * disagrees with the new colophon text. The user can then set
- * coverSubtitle manually if they want a different cover date.
+ * Date sync: rows tagged syncTo: "dates" render the same DatePicker used
+ * at the start of the journal-creation flow, bound directly to the trip's
+ * start/end dates. There's no separate "value" string for those rows —
+ * the calendar is the only edit surface, so the action is intentional
+ * and the cover updates automatically through the existing date pipeline.
  */
 export default function ColophonEditor() {
   const { state, dispatch } = useJournal();
   const colophon = state.colophon;
-  const [pendingDateEdit, setPendingDateEdit] = useState<{
-    id: string;
-    next: string;
-    previous: string;
-  } | null>(null);
 
   if (!colophon) return null;
 
@@ -84,33 +79,28 @@ export default function ColophonEditor() {
     lineHeight: 1.6,
   };
 
-  const handleItemValueChange = (item: ColophonItem, next: string) => {
-    if (item.syncTo === "dates" && next.trim() !== item.value.trim()) {
-      // Defer the actual write until the user confirms — the input field
-      // shows the previous value while the modal is open. Storing the
-      // pending value lets us restore it if they cancel.
-      setPendingDateEdit({ id: item.id, next, previous: item.value });
-      return;
-    }
-    dispatch({ type: "UPDATE_COLOPHON_ITEM", id: item.id, field: "value", value: next });
+  /** Format a (start, end) tuple the same way the cover does, so the
+   *  rendered colophon and the cover always read the same range. */
+  const formatRange = (start: Date | null, end: Date | null): string => {
+    if (!start) return "";
+    return end ? `${formatDate(start)} — ${formatDate(end)}` : formatDate(start);
   };
 
-  const confirmDateEdit = () => {
-    if (!pendingDateEdit) return;
+  /** Atomically write a new date range to journal state AND to the
+   *  date row's stored `value`. Keeping value in lockstep means
+   *  ColophonRendered doesn't need any conditional logic — every
+   *  surface that reads the persisted colophon picks up the new range
+   *  for free. */
+  const writeDateRange = (rowId: string, start: Date | null, end: Date | null) => {
+    dispatch({ type: "SET_START_DATE", value: start });
+    dispatch({ type: "SET_END_DATE", value: end });
     dispatch({
       type: "UPDATE_COLOPHON_ITEM",
-      id: pendingDateEdit.id,
+      id: rowId,
       field: "value",
-      value: pendingDateEdit.next,
+      value: formatRange(start, end),
     });
-    // Clear the trip's start/end dates so the cover no longer derives a
-    // date that contradicts the colophon. coverSubtitle remains intact.
-    dispatch({ type: "SET_START_DATE", value: null });
-    dispatch({ type: "SET_END_DATE", value: null });
-    setPendingDateEdit(null);
   };
-
-  const cancelDateEdit = () => setPendingDateEdit(null);
 
   // ── Drag-reorder ────────────────────────────────────────────────────────
   // Identical sensor config to SortablePhotoList so touch + mouse behave
@@ -279,12 +269,31 @@ export default function ColophonEditor() {
         </div>
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>Value</label>
-          <input
-            style={inputStyle}
-            value={row.value}
-            placeholder="Value"
-            onChange={(e) => handleItemValueChange(row, e.target.value)}
-          />
+          {row.syncTo === "dates" ? (
+            // Calendar picker bound straight to the trip's start/end
+            // dates. writeDateRange keeps the row's stored value in
+            // lockstep with the new range so the rendered colophon picks
+            // up the change. The cover updates automatically through
+            // the same start/end pipeline.
+            <DatePicker
+              startDate={state.startDate}
+              endDate={state.endDate}
+              onStartChange={(d) => writeDateRange(row.id, d, state.endDate)}
+              onEndChange={(d) => writeDateRange(row.id, state.startDate, d)}
+            />
+          ) : (
+            <input
+              style={inputStyle}
+              value={row.value}
+              placeholder="Value"
+              onChange={(e) => dispatch({
+                type: "UPDATE_COLOPHON_ITEM",
+                id: row.id,
+                field: "value",
+                value: e.target.value,
+              })}
+            />
+          )}
         </div>
       </div>
       <button
@@ -468,16 +477,6 @@ export default function ColophonEditor() {
         )}
       </div>
 
-      {pendingDateEdit && (
-        <ConfirmModal
-          title="Update cover date too?"
-          body="This will also update your journal cover date. The trip's start and end dates will be cleared. Continue?"
-          confirmLabel="Update"
-          cancelLabel="Cancel"
-          onConfirm={confirmDateEdit}
-          onCancel={cancelDateEdit}
-        />
-      )}
 
       <style jsx>{`
         @media (max-width: 500px) {

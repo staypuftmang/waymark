@@ -17,7 +17,6 @@ import { useJournal } from "@/app/context/JournalContext";
 // initial /j/[slug] payload.
 const RefinePanel = dynamic(() => import("./RefinePanel"), { ssr: false, loading: () => null });
 const Lightbox = dynamic(() => import("./Lightbox"), { ssr: false, loading: () => null });
-const ColophonEditor = dynamic(() => import("./ColophonEditor"), { ssr: false, loading: () => null });
 import ColophonRendered from "./ColophonRendered";
 
 interface JournalPreviewProps {
@@ -474,15 +473,6 @@ export default function JournalPreview({
       >
 
         <LayoutComponent photos={photos} vs={vs} vk={vk} len={len} onPhotoClick={openLightbox} />
-
-        {/* Colophon editor — shown in the editor preview only. data-export-hide
-            keeps it out of the PNG export. The renderer below is what's
-            actually captured. */}
-        {colophon && (
-          <div data-export-hide="colophon-editor">
-            <ColophonEditor />
-          </div>
-        )}
 
         {/* When the colophon takes over as the closing section, hide the
             legacy fin + "Made with Waymark" inline footer — the colophon
