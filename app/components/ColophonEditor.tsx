@@ -1,6 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useJournal } from "@/app/context/JournalContext";
 import { COLOPHON_MAX_ITEMS, type ColophonItem } from "@/app/lib/types";
 import { ConfirmModal } from "./ui";
@@ -92,6 +112,36 @@ export default function ColophonEditor() {
 
   const cancelDateEdit = () => setPendingDateEdit(null);
 
+  // ── Drag-reorder ────────────────────────────────────────────────────────
+  // Identical sensor config to SortablePhotoList so touch + mouse behave
+  // the same way across the app: pointer needs 5px drift before lift,
+  // touch needs a 200ms hold so a quick tap on the value field doesn't
+  // start a drag by accident.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const handleDragStart = (e: DragStartEvent) => setActiveDragId(String(e.active.id));
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedItems.findIndex((it) => it.id === active.id);
+    const newIndex = sortedItems.findIndex((it) => it.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(sortedItems, oldIndex, newIndex);
+    dispatch({ type: "REORDER_COLOPHON_ITEMS", ids: next.map((it) => it.id) });
+  };
+
+  const handleDragCancel = () => setActiveDragId(null);
+
+  const activeRow = activeDragId ? sortedItems.find((it) => it.id === activeDragId) ?? null : null;
+
   const Toggle = ({ on, onChange, ariaLabel }: { on: boolean; onChange: () => void; ariaLabel: string }) => (
     <button
       type="button"
@@ -140,6 +190,160 @@ export default function ColophonEditor() {
     color: "var(--color-ink)",
   };
 
+  /** Grip-dots drag handle. Listeners + attributes are spread onto the
+   * outer element so only this widget activates the drag — taps on the
+   * toggle, inputs, or remove button never start a reorder. */
+  const GripDots = ({
+    handleProps,
+    active,
+    dimmed,
+  }: {
+    handleProps?: Record<string, unknown>;
+    active?: boolean;
+    dimmed?: boolean;
+  }) => (
+    <div
+      {...(handleProps ?? {})}
+      role="button"
+      aria-label="Drag to reorder"
+      tabIndex={0}
+      style={{
+        paddingTop: 22,
+        flexShrink: 0,
+        cursor: active ? "grabbing" : "grab",
+        opacity: dimmed ? 0.25 : active ? 0.7 : 0.35,
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        alignItems: "center",
+        width: 12,
+        // Stop the surrounding scroll container from claiming the touch
+        // gesture before the sensor lifts off.
+        touchAction: "none",
+        userSelect: "none",
+      }}
+    >
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ display: "flex", gap: 3 }}>
+          <span
+            style={{
+              width: 3,
+              height: 3,
+              borderRadius: "50%",
+              background: active ? "var(--color-accent)" : "var(--color-stone)",
+              display: "block",
+            }}
+          />
+          <span
+            style={{
+              width: 3,
+              height: 3,
+              borderRadius: "50%",
+              background: active ? "var(--color-accent)" : "var(--color-stone)",
+              display: "block",
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+
+  /** The label/value/toggle/remove block that's identical between a
+   * static row and the row currently being dragged in the overlay. */
+  const RowBody = ({ row }: { row: ColophonItem }) => (
+    <>
+      <div style={{ paddingTop: 22, flexShrink: 0 }}>
+        <Toggle
+          on={row.visible}
+          onChange={() => dispatch({ type: "TOGGLE_COLOPHON_ITEM", id: row.id })}
+          ariaLabel={row.visible ? "Hide row" : "Show row"}
+        />
+      </div>
+      <div
+        className="wm-colophon-fields"
+        style={{ flex: 1, display: "flex", flexDirection: "row", gap: 10 }}
+      >
+        <div style={{ flex: "0 0 160px" }}>
+          <label style={labelStyle}>Label</label>
+          <input
+            style={inputStyle}
+            value={row.label}
+            placeholder="Label"
+            onChange={(e) => dispatch({
+              type: "UPDATE_COLOPHON_ITEM",
+              id: row.id,
+              field: "label",
+              value: e.target.value,
+            })}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>Value</label>
+          <input
+            style={inputStyle}
+            value={row.value}
+            placeholder="Value"
+            onChange={(e) => handleItemValueChange(row, e.target.value)}
+          />
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => dispatch({ type: "REMOVE_COLOPHON_ITEM", id: row.id })}
+        aria-label="Remove row"
+        title="Remove row"
+        className="cursor-pointer bg-transparent border-none"
+        style={{
+          marginTop: 22,
+          padding: 4,
+          color: "var(--color-stone)",
+          fontSize: 16,
+          lineHeight: 1,
+        }}
+      >
+        &times;
+      </button>
+    </>
+  );
+
+  /** Sortable wrapper. Spread setNodeRef on the outer div for positioning
+   * and wire setActivatorNodeRef + listeners ONLY to the GripDots so the
+   * inputs and toggle stay clickable. The wrapper also reserves the
+   * dragging slot's space (opacity 0.4) while the overlay carries the
+   * visual ghost above the list. */
+  const SortableRow = ({ row, isDragging }: { row: ColophonItem; isDragging: boolean }) => {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      setActivatorNodeRef,
+      transform,
+      transition,
+    } = useSortable({ id: row.id });
+
+    const style: CSSProperties = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.4 : row.visible ? 1 : 0.4,
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-start",
+    };
+
+    const handleProps = {
+      ref: setActivatorNodeRef,
+      ...attributes,
+      ...listeners,
+    } as Record<string, unknown>;
+
+    return (
+      <div ref={setNodeRef} className="wm-colophon-row-edit" style={style}>
+        <GripDots handleProps={handleProps} dimmed={!row.visible} />
+        <RowBody row={row} />
+      </div>
+    );
+  };
+
   return (
     <>
       <div
@@ -183,73 +387,49 @@ export default function ColophonEditor() {
 
             <div style={{ height: 1, background: "var(--color-border)", margin: "16px 0" }} />
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {sortedItems.map((row) => (
-                <div
-                  key={row.id}
-                  className="wm-colophon-row-edit"
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                    opacity: row.visible ? 1 : 0.4,
-                    transition: "opacity 0.15s ease",
-                  }}
-                >
-                  <div style={{ paddingTop: 22, flexShrink: 0 }}>
-                    <Toggle
-                      on={row.visible}
-                      onChange={() => dispatch({ type: "TOGGLE_COLOPHON_ITEM", id: row.id })}
-                      ariaLabel={row.visible ? "Hide row" : "Show row"}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext items={sortedItems.map((it) => it.id)} strategy={verticalListSortingStrategy}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {sortedItems.map((row) => (
+                    <SortableRow
+                      key={row.id}
+                      row={row}
+                      isDragging={activeDragId === row.id}
                     />
-                  </div>
+                  ))}
+                </div>
+              </SortableContext>
+              <DragOverlay dropAnimation={null}>
+                {activeRow ? (
                   <div
-                    className="wm-colophon-fields"
-                    style={{ flex: 1, display: "flex", flexDirection: "row", gap: 10 }}
-                  >
-                    <div style={{ flex: "0 0 160px" }}>
-                      <label style={labelStyle}>Label</label>
-                      <input
-                        style={inputStyle}
-                        value={row.label}
-                        placeholder="Label"
-                        onChange={(e) => dispatch({
-                          type: "UPDATE_COLOPHON_ITEM",
-                          id: row.id,
-                          field: "label",
-                          value: e.target.value,
-                        })}
-                      />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelStyle}>Value</label>
-                      <input
-                        style={inputStyle}
-                        value={row.value}
-                        placeholder="Value"
-                        onChange={(e) => handleItemValueChange(row, e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => dispatch({ type: "REMOVE_COLOPHON_ITEM", id: row.id })}
-                    aria-label="Remove row"
-                    title="Remove row"
-                    className="cursor-pointer bg-transparent border-none"
+                    className="bg-card border border-border"
                     style={{
-                      marginTop: 22,
-                      padding: 4,
-                      color: "var(--color-stone)",
-                      fontSize: 16,
-                      lineHeight: 1,
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "flex-start",
+                      borderRadius: 5,
+                      padding: "8px 10px",
+                      borderColor: "var(--color-accent)",
+                      boxShadow: "var(--shadow-drag)",
+                      transform: "rotate(-1deg)",
+                      // Inputs inside the overlay are non-interactive — the
+                      // event happens on the live row underneath, then the
+                      // ghost vanishes on drop.
+                      pointerEvents: "none",
                     }}
                   >
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <GripDots active />
+                    <RowBody row={activeRow} />
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
 
             <button
               type="button"
