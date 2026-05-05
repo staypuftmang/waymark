@@ -21,7 +21,6 @@ const CATEGORIES: { key: Category; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
-const ATTACHMENTS_BUCKET = "Feedback-Attachments";
 const MAX_ATTACHMENTS = 2;
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -38,12 +37,6 @@ function isMobileBrowser(): boolean {
 
 function uniqueId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function safeExt(name: string): string {
-  const dot = name.lastIndexOf(".");
-  if (dot < 0) return "jpg";
-  return name.slice(dot + 1).replace(/[^a-zA-Z0-9]/g, "").slice(0, 5).toLowerCase() || "jpg";
 }
 
 export default function FeedbackWidget() {
@@ -157,41 +150,90 @@ export default function FeedbackWidget() {
   }, []);
 
   /**
-   * Upload all pending attachments. Returns the public URLs that succeeded
-   * and a count of failures so the caller can decide to surface a partial
-   * success message.
+   * Upload all pending attachments via /api/feedback-upload. The endpoint
+   * validates MIME + size and rate-limits (10/hr authed, 3/hr anon) before
+   * forwarding to Storage with the service-role client. Direct browser
+   * uploads to the bucket are no longer permitted by RLS.
+   *
+   * Returns the public URLs that succeeded, a count of failures, and the
+   * first user-facing error message so the caller can surface it.
    */
-  const uploadAttachments = useCallback(async (): Promise<{ urls: string[]; failed: number }> => {
-    if (attachments.length === 0) return { urls: [], failed: 0 };
+  const uploadAttachments = useCallback(async (): Promise<{
+    urls: string[];
+    failed: number;
+    errorMessage: string | null;
+  }> => {
+    if (attachments.length === 0) return { urls: [], failed: 0, errorMessage: null };
     const urls: string[] = [];
     let failed = 0;
+    let firstError: string | null = null;
+
+    // Bearer token (signed-in users get the higher rate-limit tier and
+    // their files land in /<userId>/ rather than /anon/).
+    let authHeader: Record<string, string> = {};
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) authHeader = { Authorization: `Bearer ${token}` };
+    } catch {
+      // Non-fatal — fall through and upload as anonymous.
+    }
+
     for (const a of attachments) {
       try {
-        const path = `${user?.id ?? "anon"}/${uniqueId()}.${safeExt(a.file.name)}`;
-        const { error } = await supabase.storage
-          .from(ATTACHMENTS_BUCKET)
-          .upload(path, a.file, {
-            contentType: a.file.type || "image/jpeg",
-            upsert: false,
-          });
-        if (error) throw error;
-        const { data } = supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
-        if (data?.publicUrl) urls.push(data.publicUrl);
-        else failed += 1;
+        const form = new FormData();
+        form.append("file", a.file, a.file.name);
+        const r = await fetch("/api/feedback-upload", {
+          method: "POST",
+          headers: authHeader,
+          body: form,
+        });
+        if (r.ok) {
+          const { url } = (await r.json()) as { url?: string };
+          if (url) {
+            urls.push(url);
+            continue;
+          }
+          failed += 1;
+          firstError ??= "Upload didn't return a URL — please try again.";
+          continue;
+        }
+
+        // Map the server's error envelope { error, message } to a user-
+        // facing string. Server messages are already human-friendly per
+        // route contract, so we surface them as-is.
+        let serverMessage: string | undefined;
+        try {
+          const body = (await r.json()) as { error?: string; message?: string };
+          serverMessage = body.message;
+        } catch {
+          // Non-JSON body — fall through to status-based fallback.
+        }
+        const fallback =
+          r.status === 413 ? "That image is over the 5 MB limit."
+          : r.status === 415 ? "Only PNG, JPG, GIF, or WebP images are supported."
+          : r.status === 429 ? "Upload limit reached — try again later."
+          : "Couldn't upload that image.";
+        failed += 1;
+        firstError ??= serverMessage ?? fallback;
       } catch (err) {
         console.error("attachment upload failed:", err instanceof Error ? err.message : "unknown");
         failed += 1;
+        firstError ??= "Network error — couldn't reach the upload service.";
       }
     }
-    return { urls, failed };
-  }, [attachments, user]);
+
+    return { urls, failed, errorMessage: firstError };
+  }, [attachments]);
 
   const submit = useCallback(async () => {
     if (!category || !message.trim() || submitting) return;
     setSubmitting(true);
     setStatus("idle");
+    setAttachError(null);
     try {
-      const { urls, failed } = await uploadAttachments();
+      const { urls, failed, errorMessage } = await uploadAttachments();
+      if (errorMessage) setAttachError(errorMessage);
       const row = {
         user_id: user?.id ?? null,
         email: !user && email.trim() ? email.trim() : null,
