@@ -324,7 +324,19 @@ export default function FeedbackWidget() {
         `ownProps: ${JSON.stringify(ownProps)}`,
       ].filter(Boolean).join(" — ");
       console.error(summary, err);
-      if (msg && msg !== "unknown" && msg !== "[object Object]") setAttachError(msg);
+
+      // Map HTTP status to the user-facing message per spec. Always
+      // override any earlier attachError (e.g. from a partial upload
+      // failure) so the banner shows ONE consolidated reason. Server
+      // messages are intentionally NOT used here — the spec wants a
+      // fixed mapping by status code, period.
+      const httpStatus = (err as { status?: number } | null | undefined)?.status;
+      const userMessage =
+        httpStatus === 429 ? "You've reached the feedback limit for now. Try again in an hour."
+        : httpStatus === 413 ? "Your message is too long. Please shorten it and try again."
+        : httpStatus === 415 ? "Unsupported file type. Please use PNG, JPG, or WEBP."
+        : "We couldn't send your feedback. Please try again later.";
+      setAttachError(userMessage);
       track("feedback_error", { category });
       setStatus("error");
     } finally {
@@ -565,7 +577,10 @@ export default function FeedbackWidget() {
                   )}
                 </div>
 
-                {attachError && (
+                {/* Inline picker-validation text only — submit-time errors
+                    are consolidated into the red banner below to avoid the
+                    dual-display problem. */}
+                {attachError && status !== "error" && (
                   <div className="text-stone" style={{ fontSize: 11, marginBottom: 8 }}>
                     {attachError}
                   </div>
@@ -654,7 +669,7 @@ export default function FeedbackWidget() {
                       borderRadius: 4,
                     }}
                   >
-                    Something went wrong — try again.
+                    {attachError ?? "We couldn't send your feedback. Please try again later."}
                   </div>
                 )}
 
