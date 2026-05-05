@@ -110,33 +110,36 @@ export default function FeedbackWidget() {
 
   const onPickFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setAttachError(null);
     const incoming = Array.from(files);
-    const errors: string[] = [];
-    const accepted: PendingAttachment[] = [];
 
-    setAttachments((current) => {
+    // Validate + classify OUTSIDE any state updater so React StrictMode's
+    // double-invocation can't push the same files in twice. (When the
+    // arrays lived in the outer scope and were mutated inside the
+    // setAttachments updater, dev-mode rendering produced duplicate
+    // thumbnails because the updater ran twice with the SAME starting
+    // `current` but a SHARED `accepted` array — items got pushed once
+    // per invocation.)
+    const slotsCheck = (current: PendingAttachment[]) => {
+      const errors: string[] = [];
+      const accepted: PendingAttachment[] = [];
       const slotsLeft = Math.max(0, MAX_ATTACHMENTS - current.length);
-      if (slotsLeft === 0) {
-        errors.push(`Max ${MAX_ATTACHMENTS} screenshots`);
-      }
+      if (slotsLeft === 0) errors.push(`Max ${MAX_ATTACHMENTS} screenshots`);
       const room = incoming.slice(0, slotsLeft);
       const dropped = incoming.length - room.length;
       if (dropped > 0) errors.push(`${dropped} extra dropped (${MAX_ATTACHMENTS} max)`);
-
       for (const f of room) {
-        if (!f.type.startsWith("image/")) {
-          errors.push(`${f.name} skipped (not an image)`);
-          continue;
-        }
-        if (f.size > MAX_BYTES) {
-          errors.push(`${f.name} skipped (over 5 MB)`);
-          continue;
-        }
+        if (!f.type.startsWith("image/")) { errors.push(`${f.name} skipped (not an image)`); continue; }
+        if (f.size > MAX_BYTES) { errors.push(`${f.name} skipped (over 5 MB)`); continue; }
         accepted.push({ id: uniqueId(), file: f, previewUrl: URL.createObjectURL(f) });
       }
+      return { errors, accepted };
+    };
 
-      if (errors.length > 0) setAttachError(errors.join(" · "));
+    setAttachments((current) => {
+      const { errors, accepted } = slotsCheck(current);
+      // Set the error message synchronously so a single pick can't show
+      // a stale error from a previous pick.
+      setAttachError(errors.length > 0 ? errors.join(" · ") : null);
       return [...current, ...accepted];
     });
   }, []);
@@ -253,7 +256,37 @@ export default function FeedbackWidget() {
         setTimeout(resetForm, 200);
       }, partial ? 4500 : 3000);
     } catch (err) {
-      console.error("feedback submit failed:", err instanceof Error ? err.message : "unknown");
+      // The Next.js dev overlay only shows the first argument's
+      // serialization, AND PostgrestError keeps its fields as non-
+      // enumerable properties — together that's why the previous
+      // attempts showed "{}". Pull every own property name (enumerable
+      // or not), then bake it all into a single descriptive string so
+      // the overlay banner itself reads the real cause.
+      const isObj = err && typeof err === "object";
+      const ownProps = isObj
+        ? Object.getOwnPropertyNames(err as object).reduce<Record<string, unknown>>((acc, k) => {
+            try { acc[k] = (err as Record<string, unknown>)[k]; } catch { /* skip */ }
+            return acc;
+          }, {})
+        : {};
+      const ctor = (err as { constructor?: { name?: string } } | null | undefined)?.constructor?.name;
+      const msg = (typeof ownProps.message === "string" && ownProps.message)
+        || (typeof err === "string" ? err : "")
+        || (isObj ? String(err) : "")
+        || "unknown";
+      const code = typeof ownProps.code === "string" ? ownProps.code : undefined;
+      const details = typeof ownProps.details === "string" ? ownProps.details : undefined;
+      const hint = typeof ownProps.hint === "string" ? ownProps.hint : undefined;
+      const summary = [
+        `feedback submit failed [${ctor ?? typeof err}]`,
+        `message: ${msg}`,
+        code ? `code: ${code}` : null,
+        details ? `details: ${details}` : null,
+        hint ? `hint: ${hint}` : null,
+        `ownProps: ${JSON.stringify(ownProps)}`,
+      ].filter(Boolean).join(" — ");
+      console.error(summary, err);
+      if (msg && msg !== "unknown" && msg !== "[object Object]") setAttachError(msg);
       track("feedback_error", { category });
       setStatus("error");
     } finally {
