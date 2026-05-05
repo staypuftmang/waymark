@@ -237,17 +237,55 @@ export default function FeedbackWidget() {
     try {
       const { urls, failed, errorMessage } = await uploadAttachments();
       if (errorMessage) setAttachError(errorMessage);
-      const row = {
-        user_id: user?.id ?? null,
-        email: !user && email.trim() ? email.trim() : null,
+
+      // POST through /api/feedback-submit instead of inserting directly.
+      // The route applies tiered rate limits (10/hr authed, 3/hr anon)
+      // and writes via service-role; the anon/auth INSERT policies on
+      // public.feedback were dropped in migration 016.
+      let authHeader: Record<string, string> = {};
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (token) authHeader = { Authorization: `Bearer ${token}` };
+      } catch {
+        // Non-fatal — submit as anonymous.
+      }
+
+      const body = {
         category,
         message: message.trim(),
+        email: !user && email.trim() ? email.trim() : null,
         page_url: typeof window !== "undefined" ? window.location.href : null,
         user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
         attachments: urls.length > 0 ? urls : null,
       };
-      const { error } = await supabase.from("feedback").insert(row);
-      if (error) throw error;
+
+      const r = await fetch("/api/feedback-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        // Map server errors to throwable shapes so the catch block
+        // surfaces the real reason. Server messages are already worded
+        // for end-users; fall back to a status-based hint if the body
+        // isn't JSON.
+        let serverMessage: string | undefined;
+        let serverCode: string | undefined;
+        try {
+          const errBody = (await r.json()) as { error?: string; message?: string };
+          serverMessage = errBody.message;
+          serverCode = errBody.error;
+        } catch { /* non-JSON body */ }
+        const fallback =
+          r.status === 429 ? "Too many submissions — try again later."
+          : r.status === 400 ? "That submission was rejected — please check the form."
+          : "Couldn't send feedback right now.";
+        const err = new Error(serverMessage ?? fallback);
+        (err as Error & { code?: string; status?: number }).code = serverCode;
+        (err as Error & { code?: string; status?: number }).status = r.status;
+        throw err;
+      }
       track("feedback_submitted", { category, attachmentCount: urls.length });
       const partial = failed > 0;
       setStatus(partial ? "partial" : "success");

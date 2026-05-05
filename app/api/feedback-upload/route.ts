@@ -1,9 +1,9 @@
 import { apiError, withAuth } from "@/app/lib/api";
+import { createHourlyLimiter, getClientIp } from "@/app/lib/hourlyLimiter";
 import { supabaseAdmin } from "@/app/lib/supabase-admin";
 
 const BUCKET = "Feedback-Attachments";
 const MAX_BYTES = 5 * 1024 * 1024;
-const HOUR_MS = 60 * 60 * 1000;
 
 const ALLOWED_MIME = new Set([
   "image/png",
@@ -19,59 +19,10 @@ const ALLOWED_MIME = new Set([
 const HOURLY_LIMIT_AUTH = 10;
 const HOURLY_LIMIT_ANON = 3;
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-// In-memory hourly counter, scoped to the warm Vercel instance. Multiple
-// instances each have their own copy, so the effective cap is up to
-// N × limit during traffic spikes — same trade-off /api/generate makes.
-// Spec says "no Redis at this scale" so this is intentional.
-const limiter = new Map<string, RateLimitEntry>();
-
-function checkAndIncrement(key: string, limit: number): {
-  allowed: boolean;
-  resetInSeconds: number;
-} {
-  const now = Date.now();
-  let entry = limiter.get(key);
-  if (!entry || now >= entry.resetAt) {
-    entry = { count: 0, resetAt: now + HOUR_MS };
-    limiter.set(key, entry);
-  }
-  if (entry.count >= limit) {
-    return {
-      allowed: false,
-      resetInSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
-    };
-  }
-  entry.count += 1;
-  return { allowed: true, resetInSeconds: 0 };
-}
-
-// Periodic cleanup so the map doesn't accumulate stale entries forever.
-// Mirrors the pattern in /api/generate.
-if (typeof globalThis !== "undefined") {
-  const g = globalThis as unknown as { __waymarkFeedbackCleanup?: boolean };
-  if (!g.__waymarkFeedbackCleanup) {
-    g.__waymarkFeedbackCleanup = true;
-    setInterval(() => {
-      const now = Date.now();
-      for (const [k, e] of limiter.entries()) {
-        if (now >= e.resetAt) limiter.delete(k);
-      }
-    }, 5 * 60 * 1000);
-  }
-}
-
-function getClientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  const real = req.headers.get("x-real-ip");
-  if (real) return real;
-  return "unknown";
-}
+// Independent counter from /api/feedback-submit so an anon user that
+// burns through their submit budget can still attach a screenshot to the
+// next valid submit, and vice versa.
+const checkAndIncrement = createHourlyLimiter();
 
 function safeExt(name: string, mime: string): string {
   const dot = name.lastIndexOf(".");
